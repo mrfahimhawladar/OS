@@ -5,7 +5,8 @@ LD := ld
 CXXFLAGS := -m32 -std=gnu++17 -ffreestanding -O2 -Wall -Wextra \
             -fno-exceptions -fno-rtti -fno-threadsafe-statics \
             -fno-use-cxa-atexit -fno-stack-protector -fno-pic \
-            -fno-pie -mno-mmx -mno-sse -mno-sse2
+            -fno-pie -fno-unwind-tables -fno-asynchronous-unwind-tables \
+            -mno-mmx -mno-sse -mno-sse2
 LDFLAGS := -m elf_i386 -T linker.ld -nostdlib
 
 BUILD_DIR := build
