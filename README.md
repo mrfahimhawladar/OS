@@ -12,6 +12,7 @@ This repository contains an early bootable OS foundation. It is not yet a genera
 - VGA text-mode console
 - Legacy PS/2 keyboard input (polling mode)
 - Basic command shell
+- Browser-based x86 emulator preview page powered by v86
 
 ## Shell commands
 
@@ -25,7 +26,35 @@ Type a command and press Enter:
 
 The current keyboard driver reads legacy PS/2 set-1 make codes. It supports basic US keyboard characters, Shift, Enter, and Backspace. It is an early polling driver; interrupt-driven input, Caps Lock, USB keyboard support, and international layouts are not implemented yet.
 
-## Build the ISO
+## Preview Fahim OS in a browser
+
+The repository includes `preview.html`, which runs the actual bootable ISO inside the v86 x86 PC emulator.
+
+### One-time GitHub Pages setup
+
+1. Open the repository **Settings**.
+2. Open **Pages** under **Code and automation**.
+3. Under **Build and deployment**, set **Source** to **GitHub Actions**.
+4. Open the **Actions** tab and let **Deploy Fahim OS Preview** finish successfully.
+
+After deployment, open:
+
+```
+https://mrfahimhawladar.github.io/OS/
+```
+
+### Boot your ISO on Android
+
+1. Open the **Actions** tab and select the latest successful **Build Fahim OS** run.
+2. Download the `fahim-os-iso` artifact ZIP.
+3. Extract the ZIP using your Android file manager. You need the `fahim-os.iso` file inside it.
+4. Open the preview website above in Chrome.
+5. Select `fahim-os.iso` and press **Boot Fahim OS**.
+6. Use the touchscreen text input to send commands such as `help`, `about`, or `version`.
+
+The ISO is read locally by your browser and is not uploaded to the website. The emulator library and BIOS images are loaded from the official v86 website, so an internet connection is required. Mobile performance varies by device and browser. This is a browser-based x86 PC emulation, not native Android execution.
+
+## Build the ISO locally
 
 The build uses a Linux environment with these packages:
 
@@ -56,14 +85,7 @@ make clean
 
 ## Build it from an Android phone
 
-You do not need to compile the kernel on the phone. After a push to the `main` branch:
-
-1. Open this repository on GitHub.
-2. Open the **Actions** tab.
-3. Select **Build Fahim OS** and open the latest successful run.
-4. Download the **fahim-os-iso** artifact.
-
-The workflow builds the ISO on a GitHub-hosted Ubuntu runner. The artifact is a ZIP download containing the ISO.
+You do not need to compile the kernel on the phone. Every push to `main` triggers GitHub Actions to build the ISO on a GitHub-hosted Ubuntu runner. Open the latest successful **Build Fahim OS** run and download the `fahim-os-iso` artifact.
 
 ## Project structure
 
@@ -72,7 +94,9 @@ The workflow builds the ISO on a GitHub-hosted Ubuntu runner. The artifact is a 
 - `linker.ld` — kernel memory layout
 - `grub.cfg` — GRUB boot menu
 - `Makefile` — local build instructions
+- `preview.html` — browser emulator interface
 - `.github/workflows/build.yml` — automated ISO build
+- `.github/workflows/pages.yml` — GitHub Pages deployment
 
 ## Roadmap
 
