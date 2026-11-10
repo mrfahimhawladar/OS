@@ -5,7 +5,7 @@
 .set MAGIC,    0x1BADB002
 .set CHECKSUM, -(MAGIC + FLAGS)
 
-.section .multiboot
+.section .multiboot,"a"
 .align 4
 .long MAGIC
 .long FLAGS
