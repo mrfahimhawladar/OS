@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#080b12">
+<title>Fahim OS — Emulator Preview</title>
+<style>
+:root{color-scheme:dark;--bg:#080b12;--panel:#111827;--panel2:#0d1420;--line:#253247;--muted:#93a4ba;--text:#eef4ff;--accent:#83a9ff;--green:#7ee0b0;--red:#ff8b8b}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:radial-gradient(1000px 600px at 50% -15%,#1a2b49 0%,transparent 60%),var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+main{width:min(100% - 28px,980px);margin:0 auto;padding:26px 0 44px}
+header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:24px}
+.brand{display:flex;align-items:center;gap:12px}
+.mark{width:42px;height:42px;border:1px solid #48618b;border-radius:13px;display:grid;place-items:center;background:linear-gradient(145deg,#1b2d4b,#101827);font-weight:800;letter-spacing:-1px;color:#dce8ff}
+h1{font-size:20px;line-height:1.15;margin:0}
+.subtitle{font-size:12px;color:var(--muted);margin-top:4px}
+.version{font-size:11px;color:#b8c9e8;border:1px solid var(--line);border-radius:999px;padding:6px 10px;white-space:nowrap}
+.panel{background:linear-gradient(180deg,rgba(18,27,42,.96),rgba(12,18,29,.96));border:1px solid var(--line);border-radius:18px;padding:18px;margin-bottom:16px;box-shadow:0 18px 45px rgba(0,0,0,.22)}
+h2{font-size:15px;margin:0 0 12px}
+p{margin:7px 0;color:var(--muted);font-size:13px}
+.file-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+input[type=file]{min-width:0;flex:1;background:#0a111c;border:1px dashed #405271;border-radius:11px;padding:11px;color:var(--muted);width:100%}
+button{border:1px solid #334864;background:#17253a;color:var(--text);border-radius:10px;padding:10px 14px;font:600 13px system-ui;cursor:pointer;min-height:42px}
+button.primary{background:#dce8ff;color:#101827;border-color:#dce8ff}
+button:disabled{opacity:.38;cursor:not-allowed}
+.controls{display:flex;gap:8px;flex-wrap:wrap;margin-top:13px}
+.status{display:flex;align-items:center;gap:9px;color:var(--muted);font-size:12px;margin-top:12px;min-height:20px}
+.dot{width:8px;height:8px;border-radius:50%;background:#718096;flex:none}
+.dot.good{background:var(--green)}.dot.bad{background:var(--red)}.dot.busy{background:var(--accent);box-shadow:0 0 0 4px rgba(131,169,255,.12)}
+.screen-wrap{padding:8px;background:#030609;border:1px solid #26364c;border-radius:14px;overflow:auto;min-height:260px;display:flex;align-items:center;justify-content:center}
+#screen_container{width:100%;min-height:240px;display:flex;align-items:center;justify-content:center;overflow:auto}
+#screen_container>div{white-space:pre;font:14px/14px "Courier New",monospace;min-width:max-content;color:#e8edf5;background:#000}
+#screen_container canvas{display:block;max-width:100%;height:auto;image-rendering:pixelated}
+.hint{font-size:12px;color:var(--muted);margin:10px 2px 0}
+.send-row{display:flex;gap:8px;margin-top:10px}
+#typed{flex:1;min-width:0;background:#080f19;border:1px solid #31435d;border-radius:10px;padding:11px 12px;color:var(--text);font:14px system-ui;outline:none}
+#typed:focus{border-color:var(--accent)}
+.small{font-size:11px;color:#8092aa}
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px}
+.step{background:#0b121e;border:1px solid #202e43;border-radius:12px;padding:12px}
+.step b{display:block;font-size:12px;margin-bottom:5px}
+.step span{font-size:11px;color:var(--muted)}
+a{color:#b8ceff}
+footer{text-align:center;color:#718096;font-size:11px;padding:8px 0 0}
+@media(max-width:600px){main{width:min(100% - 20px,980px);padding-top:17px}.panel{padding:14px;border-radius:15px}.steps{grid-template-columns:1fr}.version{font-size:10px}header{margin-bottom:16px}.screen-wrap{min-height:230px}#screen_container{min-height:220px}}
+</style>
+<script src="https://copy.sh/v86/build/libv86.js"></script>
+</head>
+<body>
+<main>
+<header>
+  <div class="brand"><div class="mark">FO</div><div><h1>Fahim OS</h1><div class="subtitle">x86 emulator · browser preview</div></div></div>
+  <div class="version">Milestone 0.2</div>
+</header>
+
+<section class="panel">
+  <h2>Boot an ISO image</h2>
+  <p>Download the latest <b>fahim-os-iso</b> artifact from GitHub Actions, extract the ZIP, then select the .iso file here. The ISO stays in your browser; it is not uploaded to this website.</p>
+  <div class="file-row">
+    <input id="isoFile" type="file" accept=".iso,application/x-iso9660-image">
+  </div>
+  <div class="controls">
+    <button class="primary" id="bootBtn" disabled>Boot Fahim OS</button>
+    <button id="pauseBtn" disabled>Pause</button>
+    <button id="resetBtn" disabled>Reset</button>
+    <button id="fullBtn" disabled>Fullscreen</button>
+  </div>
+  <div class="status"><span id="statusDot" class="dot"></span><span id="statusText">Choose the Fahim OS ISO to begin.</span></div>
+</section>
+
+<section class="panel">
+  <h2>Emulator display</h2>
+  <div class="screen-wrap" id="screenWrap">
+    <div id="screen_container">
+      <div>FAHIM OS
+No ISO loaded yet.
+
+Choose the ISO file above, then press “Boot Fahim OS”.</div>
+      <canvas style="display:none"></canvas>
+    </div>
+  </div>
+  <p class="hint">Tap the display once to focus it. On phones, use the text input below to send commands to the emulated keyboard.</p>
+</section>
+
+<section class="panel">
+  <h2>Touch keyboard</h2>
+  <p>Type a command below and send it to the PS/2 keyboard inside Fahim OS. Example: <code>help</code></p>
+  <form id="keyboardForm" class="send-row">
+    <input id="typed" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Type a command…" disabled>
+    <button id="sendBtn" type="submit" disabled>Send</button>
+  </form>
+  <div class="controls">
+    <button id="enterBtn" disabled>Enter</button>
+    <button id="backBtn" disabled>Backspace</button>
+    <button id="spaceBtn" disabled>Space</button>
+  </div>
+  <p class="small">This is a basic US keyboard mapping. Physical keyboard input also works when the emulator display has focus.</p>
+</section>
+
+<section class="panel">
+  <h2>How to preview</h2>
+  <div class="steps">
+    <div class="step"><b>01 · Build</b><span>Open GitHub Actions and download the successful ISO artifact.</span></div>
+    <div class="step"><b>02 · Extract</b><span>Extract the downloaded ZIP and locate fahim-os.iso.</span></div>
+    <div class="step"><b>03 · Boot</b><span>Select the ISO above and tap Boot Fahim OS.</span></div>
+  </div>
+</section>
+<footer>Fahim OS is an experimental hobby OS. The emulator is powered by v86.</footer>
+</main>
+
+<script>
+"use strict";
+(() => {
+  const $ = id => document.getElementById(id);
+  const fileInput = $("isoFile");
+  const bootButton = $("bootBtn");
+  const pauseButton = $("pauseBtn");
+  const resetButton = $("resetBtn");
+  const fullButton = $("fullBtn");
+  const textInput = $("typed");
+  const sendButton = $("sendBtn");
+  const enterButton = $("enterBtn");
+  const backButton = $("backBtn");
+  const spaceButton = $("spaceBtn");
+  const statusText = $("statusText");
+  const statusDot = $("statusDot");
+  let emulator = null;
+  let selectedFile = null;
+  let running = false;
+  let booting = false;
+
+  function status(message, kind) {
+    statusText.textContent = message;
+    statusDot.className = "dot" + (kind ? " " + kind : "");
+  }
+
+  function enableKeyboard(enabled) {
+    textInput.disabled = !enabled;
+    sendButton.disabled = !enabled;
+    enterButton.disabled = !enabled;
+    backButton.disabled = !enabled;
+    spaceButton.disabled = !enabled;
+  }
+
+  fileInput.addEventListener("change", () => {
+    selectedFile = fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
+    if (!selectedFile) {
+      bootButton.disabled = true;
+      status("Choose the Fahim OS ISO to begin.");
+      return;
+    }
+    if (!selectedFile.name.toLowerCase().endsWith(".iso")) {
+      selectedFile = null;
+      fileInput.value = "";
+      bootButton.disabled = true;
+      status("Please choose an extracted .iso file, not the ZIP archive.", "bad");
+      return;
+    }
+    bootButton.disabled = false;
+    status("Selected " + selectedFile.name + " (" + (selectedFile.size / 1048576).toFixed(1) + " MB). Ready to boot.", "good");
+  });
+
+  bootButton.addEventListener("click", async () => {
+    if (!selectedFile || booting) return;
+    if (typeof V86 !== "function") {
+      status("Could not load the v86 emulator script. Check your internet connection and reload this page.", "bad");
+      return;
+    }
+    booting = true;
+    bootButton.disabled = true;
+    status("Starting x86 emulator and loading BIOS files…", "busy");
+    try {
+      if (emulator) {
+        try { emulator.stop(); } catch (_) {}
+        emulator = null;
+      }
+      $("screen_container").innerHTML = '<div style="white-space:pre;font:14px/14px monospace;background:#000;color:#eee">Starting emulator…</div><canvas style="display:none"></canvas>';
+      emulator = new V86({
+        wasm_path: "https://copy.sh/v86/build/v86.wasm",
+        memory_size: 64 * 1024 * 1024,
+        vga_memory_size: 4 * 1024 * 1024,
+        screen_container: $("screen_container"),
+        bios: { url: "https://copy.sh/v86/bios/seabios.bin" },
+        vga_bios: { url: "https://copy.sh/v86/bios/vgabios.bin" },
+        cdrom: { buffer: selectedFile },
+        boot_order: 0x213,
+        autostart: true
+      });
+      emulator.add_listener("emulator-ready", () => status("Emulator ready. Booting Fahim OS…", "busy"));
+      emulator.add_listener("emulator-started", () => {
+        running = true;
+        booting = false;
+        bootButton.disabled = false;
+        pauseButton.disabled = false;
+        resetButton.disabled = false;
+        fullButton.disabled = false;
+        enableKeyboard(true);
+        pauseButton.textContent = "Pause";
+        status("Emulator running. Wait for the Fahim OS prompt.", "good");
+      });
+      emulator.add_listener("emulator-stopped", () => {
+        running = false;
+        if (!booting && emulator) {
+          pauseButton.textContent = "Resume";
+          status("Emulator paused.", "");
+        }
+      });
+      emulator.add_listener("download-error", event => {
+        status("Could not load emulator resource: " + (event && event.file_name ? event.file_name : "unknown file"), "bad");
+      });
+    } catch (error) {
+      booting = false;
+      bootButton.disabled = false;
+      status("Emulator error: " + (error && error.message ? error.message : String(error)), "bad");
+    }
+  });
+
+  pauseButton.addEventListener("click", async () => {
+    if (!emulator) return;
+    try {
+      if (running) {
+        await emulator.stop();
+        pauseButton.textContent = "Resume";
+        status("Emulator paused.", "");
+      } else {
+        await emulator.run();
+        pauseButton.textContent = "Pause";
+        status("Emulator resumed.", "good");
+      }
+    } catch (error) {
+      status("Could not change emulator state: " + error.message, "bad");
+    }
+  });
+
+  resetButton.addEventListener("click", () => {
+    if (!emulator) return;
+    try {
+      emulator.restart();
+      status("Restarting Fahim OS…", "busy");
+    } catch (error) {
+      status("Could not reset emulator: " + error.message, "bad");
+    }
+  });
+
+  fullButton.addEventListener("click", async () => {
+    const target = $("screenWrap");
+    try {
+      if (!document.fullscreenElement) await target.requestFullscreen();
+      else await document.exitFullscreen();
+    } catch (_) {
+      status("Fullscreen is not available in this browser.", "bad");
+    }
+  });
+
+  const keys = {
+    a:[0x1E,0], b:[0x30,0], c:[0x2E,0], d:[0x20,0], e:[0x12,0], f:[0x21,0], g:[0x22,0],
+    h:[0x23,0], i:[0x17,0], j:[0x24,0], k:[0x25,0], l:[0x26,0], m:[0x32,0], n:[0x31,0],
+    o:[0x18,0], p:[0x19,0], q:[0x10,0], r:[0x13,0], s:[0x1F,0], t:[0x14,0], u:[0x16,0],
+    v:[0x2F,0], w:[0x11,0], x:[0x2D,0], y:[0x15,0], z:[0x2C,0],
+    "1":[0x02,0],"2":[0x03,0],"3":[0x04,0],"4":[0x05,0],"5":[0x06,0],
+    "6":[0x07,0],"7":[0x08,0],"8":[0x09,0],"9":[0x0A,0],"0":[0x0B,0],
+    "!":[0x02,1],"@":[0x03,1],"#":[0x04,1],"$":[0x05,1],"%":[0x06,1],
+    "^":[0x07,1],"&":[0x08,1],"*":[0x09,1],"(":[0x0A,1],")":[0x0B,1],
+    "-":[0x0C,0],"_":[0x0C,1],"=":[0x0D,0],"+":[0x0D,1],
+    "[":[0x1A,0],"{":[0x1A,1],"]":[0x1B,0],"}":[0x1B,1],
+    ";":[0x27,0],":":[0x27,1],"'":[0x28,0],'"':[0x28,1],
+    "`":[0x29,0],"~":[0x29,1],"\\":[0x2B,0],"|":[0x2B,1],
+    ",":[0x33,0],"<":[0x33,1],".":[0x34,0],">":[0x34,1],"/":[0x35,0],"?":[0x35,1]," ":[0x39,0]
+  };
+
+  function sendCodes(codes) {
+    if (emulator && running) emulator.keyboard_send_scancodes(codes);
+  }
+  function sendCharacter(character) {
+    if (character === "\n" || character === "\r") {
+      sendCodes([0x1C, 0x9C]);
+      return;
+    }
+    if (character === "\b") {
+      sendCodes([0x0E, 0x8E]);
+      return;
+    }
+    const entry = keys[character.toLowerCase()];
+    if (!entry) return;
+    const [code, shiftForSymbol] = entry;
+    const needsShift = shiftForSymbol || (character >= "A" && character <= "Z");
+    const sequence = [];
+    if (needsShift) sequence.push(0x2A);
+    sequence.push(code, code | 0x80);
+    if (needsShift) sequence.push(0xAA);
+    sendCodes(sequence);
+  }
+
+  $("keyboardForm").addEventListener("submit", event => {
+    event.preventDefault();
+    const value = textInput.value;
+    for (const character of value) sendCharacter(character);
+    sendCharacter("\n");
+    textInput.value = "";
+    textInput.blur();
+  });
+  enterButton.addEventListener("click", () => sendCharacter("\n"));
+  backButton.addEventListener("click", () => sendCharacter("\b"));
+  spaceButton.addEventListener("click", () => sendCharacter(" "));
+})();
+</script>
+</body>
+</html>
