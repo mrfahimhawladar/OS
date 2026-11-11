@@ -214,7 +214,7 @@ fn parse_elf64(image: &[u8]) -> Result<(u64, [ParsedSegment; MAX_ELF_SEGMENTS], 
             page_offset,
             permissions,
         };
-        segment_count++;
+        segment_count += 1;
         total_pages += page_count;
     }
 
