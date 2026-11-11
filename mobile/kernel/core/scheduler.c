@@ -426,6 +426,9 @@ void fahim_scheduler_tick(void) {
     }
 }
 
+static void scheduler_exit_current_with_status(int64_t status)
+    __attribute__((noreturn));
+
 static void scheduler_exit_current_with_status(int64_t status) {
     if (!scheduler_active || current_task < 0) {
         scheduler_halt();
