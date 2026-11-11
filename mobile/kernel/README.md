@@ -73,6 +73,17 @@ The kernel builds a second upstream aarch64-paging Mapping for VaRange::Upper an
 
 A QEMU self-test allocates a physical page, writes and reads a pattern through the high-half alias, then releases the frame. TTBR0's lower identity map remains active for the current boot PC and stack. This is a verified high-half direct-map alias, not yet a relocated high-half kernel or an EL0 process-address-space implementation.
 
+
+## Milestone 6D: EL0 address-space lifecycle
+
+The kernel now provides a small address-space manager on top of the pinned upstream aarch64-paging 0.12.3 implementation. It creates independent TTBR0 lower-VA page tables with unique, reusable ASIDs and generation-tagged handles. Every new root preserves the current supervisor-only low identity map for RAM and Device MMIO, including the kernel text/rodata permissions, while the existing TTBR1 high-half direct map remains shared.
+
+The first user mapping API supports 4 KiB EL0 pages with either read/write + execute-never data permissions or read-only executable code permissions. User virtual addresses are restricted to a separate 4 GiB–1 TiB range and checked against all kernel RAM/MMIO identity ranges. Unmapping uses the upstream page-table crate's invalid-descriptor mapping path; empty subtables are compacted. Destroying an inactive address space returns its page-table frames and releases its ASID. Mapped data frames remain caller-owned.
+
+QEMU tests create two address spaces, map the same virtual address to different physical pages with different EL0 permissions, reject a duplicate mapping, unmap one space while verifying the other remains intact, remap, destroy both spaces, and verify the user frames can be returned to the physical allocator.
+
+This milestone prepares independent page tables; it does not yet activate a user address space, enter EL0, provide a process stack/context switch, or prove user-mode execution. Those require the kernel to relocate its active PC/stack to the high-half mapping and add the EL0 exception-return/scheduler path. SMP TLB shootdown is not implemented.
+
 ## Reference platform and verification
 
 GitHub Actions cross-compiles and boots the kernel in QEMU virt with 512 MiB RAM and GICv3 explicitly selected. It checks the RAM/reserved/usable ranges, GICv3 initialization, five timer IRQ deliveries, and the controlled synchronous-exception test.
@@ -103,8 +114,8 @@ Exception-test image: mobile/kernel/build/arm64-qemu-exception-test/fahim-kernel
 
 ## Next milestones
 
-1. Relocate kernel execution and stack to the high-half mapping; add explicit mapping lifecycle/permission APIs
-2. Add EL0 address spaces, user/kernel isolation and TLB invalidation
+1. Relocate kernel execution and stack to the high-half mapping; add EL0 entry and context switching
+2. Add address-space activation, TLB invalidation and process stack management
 3. Add allocator zones and SMP-safe page allocator publication with TLB shootdown
 4. Add scheduler and context switching
 5. Add storage, input, display and touchscreen driver frameworks
