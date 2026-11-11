@@ -49,8 +49,8 @@ $(BUILD)/%.o: %.c
 
 $(USER_TEST_ELF): user/elf_loader_test.S linker/arm64-user-test.ld
 	mkdir -p $(dir $@)
-	$(CC) -ffreestanding -nostdlib -nostartfiles -static -fno-pic -fno-pie \\
-		-mcpu=cortex-a57 -Wl,-T,linker/arm64-user-test.ld \\
+	$(CC) -ffreestanding -nostdlib -nostartfiles -static -fno-pic -fno-pie \
+		-mcpu=cortex-a57 -Wl,-T,linker/arm64-user-test.ld \
 		-Wl,--build-id=none -o $@ user/elf_loader_test.S
 
 $(BUILD)/arch/arm64/boot/entry.o: arch/arm64/boot/entry.S $(USER_TEST_ELF)
