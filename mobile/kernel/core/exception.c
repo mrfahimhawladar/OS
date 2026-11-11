@@ -43,11 +43,13 @@ void irq_handle(void) {
     }
 
     if (intid == 30u) {
-        console_write("IRQ Dispatcher: handled timer PPI 30, tick ");
-        write_hex64(fahim_generic_timer_irq_count());
-        console_write("\n");
         if (fahim_scheduler_is_active()) {
+            /* Keep the preemption path quiet; the timer is re-armed upstream. */
             fahim_scheduler_tick();
+        } else {
+            console_write("IRQ Dispatcher: handled timer PPI 30, tick ");
+            write_hex64(fahim_generic_timer_irq_count());
+            console_write("\n");
         }
         return;
     }
