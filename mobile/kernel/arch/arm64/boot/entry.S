@@ -484,6 +484,18 @@ __user_fault_code_start:
     b       .Lfault_process_halt
 __user_fault_code_end:
 
+/* Embedded static user ELF64 fixture built by the AArch64 cross toolchain. */
+#ifndef FAHIM_USER_ELF_PATH
+#error "FAHIM_USER_ELF_PATH must name the generated user ELF"
+#endif
+.section .rodata.user_elf, "a"
+.balign 8
+.global __fahim_user_elf_image_start
+.global __fahim_user_elf_image_end
+__fahim_user_elf_image_start:
+    .incbin FAHIM_USER_ELF_PATH
+__fahim_user_elf_image_end:
+
 .section .bss.stack, "aw", %nobits
 .align 12
 .global __stack_bottom
