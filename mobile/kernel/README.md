@@ -1,6 +1,6 @@
 # Fahim OS Kernel
 
-This is the new device-independent ARM64 kernel implementation. The root-level x86 `kernel.cpp` is a separate learning prototype and is not reused as the mobile kernel.
+This is the device-independent ARM64 kernel implementation. The root-level x86 `kernel.cpp` is a separate learning prototype and is not reused as the mobile kernel.
 
 ## Verified milestone 1: ARM64 boot + serial console
 
@@ -10,18 +10,32 @@ This is the new device-independent ARM64 kernel implementation. The root-level x
 - PL011 serial UART discovery via Device Tree `compatible` and `reg` properties
 - Polled serial text output
 
-## Milestone 2: FDT RAM discovery
+## Verified milestone 2: FDT RAM discovery
 
 - Reads enabled Device Tree nodes with `device_type = "memory"`
 - Uses the parent bus's `#address-cells` and `#size-cells` when decoding each `reg` tuple
 - Supports one-cell and two-cell addresses and sizes
 - Handles multiple RAM tuples and rejects malformed or overflowing ranges
 - Reports each discovered RAM region over the serial console
-- The QEMU CI test checks the expected 512 MiB RAM region at `0x40000000`
 
-The first reference target is QEMU's generic ARM64 `virt` platform. QEMU places its bare-metal DTB at the start of RAM (0x40000000) and reserves a 1 MiB region for it. The kernel ELF is linked at 0x40200000 to keep the image clear of that reservation.
+## Milestone 3: reserved memory exclusions
 
-**Verification:** GitHub Actions compiles the AArch64 ELF, boots it in QEMU, and checks the serial banner, UART initialization, detected RAM base, and RAM size. See the [ARM64 kernel workflow](https://github.com/mrfahimhawladar/OS/actions/workflows/arm64-kernel.yml).
+The memory-layout builder now combines the following reservations:
+
+- FDT `/memreserve/` entries
+- Enabled children of `/reserved-memory` that provide static `reg` ranges
+- The complete kernel image, including its bootstrap stack and BSS
+- The DTB blob passed to the kernel
+
+It sorts and merges overlapping/adjacent reservations, then subtracts them from the reported RAM ranges to produce separate **usable RAM ranges**. Disabled reserved-memory nodes are ignored. Dynamic reserved-memory nodes that specify `size` but have no `reg` are rejected safely because the kernel does not yet have a placement allocator.
+
+The kernel linker exports `__kernel_start` and `__kernel_end` so that the full loaded image can be excluded from usable RAM.
+
+## Reference platform and verification
+
+The initial reference platform is QEMU's generic ARM64 `virt` machine with 512 MiB RAM. GitHub Actions cross-compiles the kernel, boots it in QEMU, and checks the RAM, reserved and usable range output.
+
+[Open the latest ARM64 QEMU workflow](https://github.com/mrfahimhawladar/OS/actions/workflows/arm64-kernel.yml).
 
 ## Build locally
 
@@ -39,16 +53,17 @@ mobile/kernel/build/arm64-qemu/fahim-kernel.elf
 
 ## Important limits
 
-- The memory map is currently detection/reporting only; no memory is allocated from it.
-- Reserved-memory nodes and boot-time exclusions are not yet combined into a safe allocatable map. A physical page allocator must not use the reported RAM ranges until those reservations, the kernel image, and the DTB are excluded.
+- The usable map is currently detected and reported only. The kernel does not allocate memory from it yet.
+- Dynamic `/reserved-memory` allocations are not supported.
+- Page alignment and platform-specific reserved regions will need explicit treatment before a page allocator can use this map.
 - MMU/page tables, interrupt controller, timer, scheduler, heap, storage, input, graphics, and touchscreen are not implemented yet.
 - This is not an Android image, phone ROM, or flashable artifact.
 - QEMU success does not imply support for any real smartphone.
 
 ## Next milestones
 
-1. Parse reserved-memory and establish an explicit reserved-region map
-2. Add exception vectors and safe exception reporting
-3. Add the GIC and generic timer
-4. Implement a physical page allocator that only uses verified free RAM
-5. Add MMU/page tables, then scheduler and context switching
+1. Add exception vectors and safe exception reporting
+2. Add the GIC and generic timer
+3. Implement a physical page allocator with page-aligned usable ranges
+4. Add MMU/page tables
+5. Add scheduler and context switching
