@@ -17,6 +17,9 @@ extern uint8_t __text_end[];
 extern uint8_t __rodata_start[];
 extern uint8_t __rodata_end[];
 extern uint8_t __exception_vectors[];
+extern const uint32_t __user_smoke_code_start[];
+extern const uint32_t __user_smoke_code_end[];
+extern uint64_t fahim_enter_user(uint64_t user_entry, uint64_t user_stack_top);
 
 int console_init_from_fdt(const void *dtb);
 void console_write(const char *text);
@@ -229,6 +232,74 @@ static void run_mmu_self_test(const memory_layout_t *layout,
         halt_forever();
     }
     console_write("User Address Space self-test: PASS (two ASIDs, EL0 permissions, isolation, unmap/remap, destroy)\n");
+    run_user_mode_self_test();
+}
+
+
+static void run_user_mode_self_test(void) {
+    const uint32_t space = fahim_address_space_create();
+    if (space == UINT32_MAX) {
+        console_write("EL0 User Mode self-test: FAIL (address-space creation)\n");
+        halt_forever();
+    }
+
+    const uint64_t code_page = fahim_page_allocator_alloc(1u);
+    const uint64_t stack_page = fahim_page_allocator_alloc(1u);
+    if (code_page == UINT64_MAX || stack_page == UINT64_MAX) {
+        console_write("EL0 User Mode self-test: FAIL (user frame allocation)\n");
+        halt_forever();
+    }
+
+    const size_t code_size =
+        (uintptr_t)__user_smoke_code_end - (uintptr_t)__user_smoke_code_start;
+    if (code_size == 0u || code_size > 4096u || (code_size & 3u) != 0u) {
+        console_write("EL0 User Mode self-test: FAIL (user payload size)\n");
+        halt_forever();
+    }
+
+    /*
+     * The test payload is assembled as ordinary upstream-toolchain AArch64
+     * instructions in read-only kernel rodata, then copied into its own frame.
+     */
+    volatile uint32_t *destination = (volatile uint32_t *)(uintptr_t)code_page;
+    const uint32_t *source = __user_smoke_code_start;
+    for (size_t index = 0; index < code_size / sizeof(uint32_t); ++index) {
+        destination[index] = source[index];
+    }
+
+    const uint64_t user_code_va = 0x0000000100200000ull;
+    const uint64_t user_stack_va = 0x0000000100400000ull;
+    if (fahim_address_space_map_user_page(
+            space, user_code_va, code_page, FAHIM_USER_PAGE_RO_X) != 0 ||
+        fahim_address_space_map_user_page(
+            space, user_stack_va, stack_page, FAHIM_USER_PAGE_RW_XN) != 0) {
+        console_write("EL0 User Mode self-test: FAIL (EL0 page mapping)\n");
+        halt_forever();
+    }
+
+    if (fahim_address_space_activate(space) != 0) {
+        console_write("EL0 User Mode self-test: FAIL (TTBR0 activation)\n");
+        halt_forever();
+    }
+
+    /* User payload writes 0xF00D to x0 and exits via SVC #0xF02. */
+    const uint64_t exit_value = fahim_enter_user(
+        user_code_va, user_stack_va + 4096u);
+    if (exit_value != 0xf00du) {
+        console_write("EL0 User Mode self-test: FAIL (unexpected user exit value) ");
+        console_write_hex64(exit_value);
+        console_write("\n");
+        halt_forever();
+    }
+
+    if (fahim_address_space_destroy(space) != 0 ||
+        fahim_page_allocator_free(code_page, 1u) != 0 ||
+        fahim_page_allocator_free(stack_page, 1u) != 0) {
+        console_write("EL0 User Mode self-test: FAIL (address-space/frame cleanup)\n");
+        halt_forever();
+    }
+
+    console_write("EL0 User Mode self-test: PASS (EL0 execution, SVC return, TTBR0 restore)\n");
 }
 
 static void run_timer_irq_self_test(void) {
