@@ -15,7 +15,7 @@ use arm_generic_timer::{
 };
 use frame_alloc::{AllocatorStats, PageSize, PhysRange, PhysicalAllocator, Provenance, RegionInit, SummaryBuddyAllocator};
 use aarch64_paging::{
-    descriptor::{Descriptor, El1Attributes, PhysicalAddress},
+    descriptor::{El1Attributes, PhysicalAddress},
     mair::{Mair, MairAttribute, NormalMemory},
     paging::{Constraints, El1And0, MemoryRegion, PageTable, Translation, VaRange},
     Mapping,
@@ -1494,7 +1494,6 @@ pub extern "C" fn fahim_address_space_activate(handle: u32) -> i32 {
 
 /// Restore the TTBR0 value saved by the current address space's activate call.
 /// Mapping::deactivate also invalidates this address space's ASID-tagged TLB.
-#[no_mangle]
 /// Switch the current single-core TTBR0 address space.
 /// A switch always passes through the shared kernel root so every task retains
 /// the same supervisor-only identity mappings and TTBR1 high-half kernel map.
