@@ -12,6 +12,7 @@ arm-gic = { version = "=0.10.0", default-features = false }
 arm-generic-timer = { version = "=0.3.1", default-features = false, features = ["el1"] }
 frame-alloc = { version = "=0.1.0", default-features = false, features = ["stats"] }
 aarch64-paging = { version = "=0.12.3", default-features = false }
+goblin = { version = "=0.10.7", default-features = false, features = ["elf64"] }
 
 [profile.release]
 panic = "abort"
