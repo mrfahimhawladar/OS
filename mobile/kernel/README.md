@@ -107,7 +107,16 @@ Fahim OS now includes an AArch64 callee-saved context-switch primitive adapted f
 
 A table-driven AArch64 SVC dispatcher uses x8 for the syscall number, x0-x1 for arguments and x0 for the result. The initial minimal ABI exposes EXIT, YIELD, GETPID and LOG; unknown numbers return -ENOSYS. It is an Fahim OS-specific bootstrap ABI, not yet a POSIX or Linux syscall table.
 
-QEMU boots two EL0 tasks with separate TTBR0 address spaces and stacks while sharing one read-only executable page. Their syscall sequence verifies task IDs, round-robin yield, switching TTBR0 between distinct ASIDs, task exit, return to the boot kernel context and cleanup. This milestone verifies cooperative task switching. Timer-driven preemption, blocking waits/sleep, process reaping policies, user-fault isolation and SMP scheduling are not yet implemented.
+QEMU boots two EL0 tasks with separate TTBR0 address spaces and stacks while sharing one read-only executable page. Their syscall sequence verifies task IDs, round-robin yield, switching TTBR0 between distinct ASIDs, task exit, return to the boot kernel context and cleanup. The first scheduler milestone verifies cooperative switching. Timer-driven preemption and blocking task lifecycle are implemented and verified in Milestone 7B below; process reaping policies, user-fault isolation and SMP scheduling remain future work.
+
+
+## Milestone 7B: timer-preemptive EL0 scheduling
+
+The upstream Generic Timer bridge now supports both a bounded diagnostic run and a continuing periodic tick source. Its five-interrupt self-test remains bounded; the scheduler can raise the IRQ limit for ongoing 10 ms timer ticks and stop/reinitialize the source safely. Timer PPI 30 is re-armed by the upstream driver before GIC EOI. While EL0 tasks are active, the IRQ dispatcher routes each timer tick to the round-robin scheduler without flooding the serial console.
+
+The two-process QEMU payload no longer calls YIELD. Instead, each task increments the same user-mapped shared counter and waits until the peer increments it too. The first task therefore cannot progress until the timer interrupt preempts it and schedules the second task. Both tasks then complete their syscall sequence and exit. The test also confirms that timer ticks occurred and the shared counter reached two, before both ASID-backed address spaces and their frames are released.
+
+This verifies single-core timer-driven preemption from EL0 on the QEMU virt reference target. It does not yet implement sleep queues, task wake deadlines, waitpid, user-fault recovery, SMP, or a production process loader.
 
 ## Reference platform and verification
 
@@ -131,17 +140,21 @@ Exception-test image: mobile/kernel/build/arm64-qemu-exception-test/fahim-kernel
 
 - Physical pages are now allocated from validated, page-aligned usable RAM on the single-core QEMU target. The bridge is identity-map-only and intentionally rejects initialization once the EL1 MMU is enabled.
 - Dynamic reserved-memory allocations and page-aligned allocation are not supported.
-- The current exception diagnostics are fatal for synchronous exceptions, FIQ and SError. Only the current-EL SPx IRQ vector has a returning dispatcher path so far.
-- The kernel now runs through its TTBR1 high-half direct-map alias and can enter one prepared EL0 address space for a one-shot SVC smoke test. The lower supervisor identity mappings remain for current kernel data and platform references. General syscalls, user-fault recovery, scheduler/process context switching, demand paging, guard-page policy and SMP TLB shootdown are not implemented yet.
+- The current exception diagnostics are fatal for unsupported synchronous exceptions, FIQ and SError. Lower-EL AArch64 SVC and IRQ vectors preserve per-task trap return state; user faults are not yet isolated and reaped.
+- The kernel runs through its TTBR1 high-half direct map and can schedule multiple EL0 tasks with separate ASIDs, private EL1 stacks, SVC services and timer-driven preemption. The lower supervisor identity mappings remain for kernel data and platform references. General user-pointer validation, user-fault recovery, demand paging, guard pages, process reaping and SMP TLB shootdown are not implemented yet.
 - The upstream GICv3 driver is currently initialized for the single-core QEMU layout. The active dispatcher handles the EL1 physical timer PPI; general device IRQ registration, SPI routing, SMP and interrupt nesting remain future work.
-- The generic timer is now functional on the QEMU reference target. The scheduler, heap, storage, input, graphics, and touchscreen are not implemented.
+- The generic timer and single-core preemptive EL0 scheduler are functional on the QEMU reference target. A full heap/process ABI, storage, input, graphics, touchscreen and phone-specific device drivers remain to be developed.
 - This is not an Android image, phone ROM, or flashable artifact. QEMU success does not prove support for a real smartphone.
 
 ## Next milestones
 
-1. Add timer-preemptive scheduling, task sleep/wakeup and safe task reaping
-2. Add general syscall argument validation, user-fault isolation and richer process lifecycle
-3. Add allocator zones and SMP-safe page allocator publication with TLB shootdown
-4. Add scheduler and context switching
-5. Add storage, input, display and touchscreen driver frameworks
-6. Develop a physical-device platform port after the memory and interrupt foundations are stable
+1. Add task sleep/wakeup deadlines, wait queues, task exit status, zombie/reap lifecycle and scheduler idle handling
+2. Add EL0 fault isolation, checked copy-in/copy-out and syscall pointer validation
+3. Add ELF64 loader/exec, process creation, per-process user stack/TLS and a stable syscall ABI
+4. Add kernel heap, memory zones, allocator reclamation and SMP-safe page allocation/TLB shootdown
+5. Add storage, VFS, block-device and filesystem layers
+6. Add input, display, GPU, audio, touchscreen and power-management driver frameworks
+7. Add networking stack and device services
+8. Add security boundaries, capability/permission model, executable signing/verification and update/rollback
+9. Port the platform layer to a real ARM64 smartphone SoC: boot chain, device tree, clocks, regulators, pinctrl, storage, display, touch, modem, Wi-Fi, audio, thermal and suspend/resume
+10. Build the Android-compatible userspace/runtime, graphics composition, system services, app package/install model and developer tooling

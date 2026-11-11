@@ -30,7 +30,7 @@ use core::{
 
 const EL1_PHYSICAL_TIMER_INTID: u32 = 30;
 const TIMER_PPI_INDEX: u32 = EL1_PHYSICAL_TIMER_INTID - 16;
-const TIMER_TEST_IRQ_LIMIT: u32 = 5;
+const TIMER_DEFAULT_IRQ_LIMIT: u32 = 5;
 const NO_PENDING_INTERRUPT: u32 = u32::MAX;
 
 static GIC_INITIALIZED: AtomicBool = AtomicBool::new(false);
@@ -38,6 +38,7 @@ static TIMER_INITIALIZED: AtomicBool = AtomicBool::new(false);
 static TIMER_INTERVAL_MS: AtomicU32 = AtomicU32::new(0);
 static TIMER_FREQUENCY_HZ: AtomicU32 = AtomicU32::new(0);
 static TIMER_IRQ_COUNT: AtomicU32 = AtomicU32::new(0);
+static TIMER_IRQ_LIMIT: AtomicU32 = AtomicU32::new(TIMER_DEFAULT_IRQ_LIMIT);
 
 /// Initialize the upstream GICv3 driver for the boot CPU.
 ///
@@ -135,6 +136,7 @@ pub extern "C" fn fahim_generic_timer_init(interval_ms: u32) -> i32 {
     TIMER_INTERVAL_MS.store(interval_ms, Ordering::Relaxed);
     TIMER_FREQUENCY_HZ.store(frequency, Ordering::Relaxed);
     TIMER_IRQ_COUNT.store(0, Ordering::Relaxed);
+    TIMER_IRQ_LIMIT.store(TIMER_DEFAULT_IRQ_LIMIT, Ordering::Relaxed);
     TIMER_INITIALIZED.store(true, Ordering::Release);
     0
 }
@@ -149,6 +151,17 @@ pub extern "C" fn fahim_generic_timer_irq_count() -> u32 {
     TIMER_IRQ_COUNT.load(Ordering::Acquire)
 }
 
+/// Configure the number of timer IRQs before the source is masked.
+/// Use u32::MAX for an ongoing periodic tick source.
+#[no_mangle]
+pub extern "C" fn fahim_generic_timer_set_irq_limit(limit: u32) -> i32 {
+    if !TIMER_INITIALIZED.load(Ordering::Acquire) || limit == 0 {
+        return -1;
+    }
+    TIMER_IRQ_LIMIT.store(limit, Ordering::Release);
+    0
+}
+
 #[no_mangle]
 pub extern "C" fn fahim_generic_timer_stop() {
     if !TIMER_INITIALIZED.load(Ordering::Acquire) {
@@ -159,6 +172,7 @@ pub extern "C" fn fahim_generic_timer_stop() {
     let physical_timer = unsafe { PhysicalTimer::new() };
     let mut timer = Timer::new(physical_timer);
     timer.disable_interrupt();
+    TIMER_INITIALIZED.store(false, Ordering::Release);
 }
 
 /// Program the next relative deadline before GIC EOIR drops active priority.
@@ -186,7 +200,7 @@ pub extern "C" fn fahim_gicv3_dispatch_irq() -> u32 {
             && TIMER_INITIALIZED.load(Ordering::Acquire)
         {
             let tick = TIMER_IRQ_COUNT.fetch_add(1, Ordering::AcqRel) + 1;
-            if tick < TIMER_TEST_IRQ_LIMIT {
+            if tick < TIMER_IRQ_LIMIT.load(Ordering::Acquire) {
                 rearm_physical_timer();
             } else {
                 /* Stop the level signal before the driver's automatic EOI. */

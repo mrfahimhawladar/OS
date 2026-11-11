@@ -358,13 +358,14 @@ static void run_process_scheduler_self_test(void) {
     const uint64_t code_page = fahim_page_allocator_alloc(1u);
     const uint64_t stack_page_a = fahim_page_allocator_alloc(1u);
     const uint64_t stack_page_b = fahim_page_allocator_alloc(1u);
+    const uint64_t shared_page = fahim_page_allocator_alloc(1u);
     if (code_page == UINT64_MAX || stack_page_a == UINT64_MAX ||
-        stack_page_b == UINT64_MAX) {
+        stack_page_b == UINT64_MAX || shared_page == UINT64_MAX) {
         console_write("Process Scheduler self-test: FAIL (physical frame allocation)\n");
         halt_forever();
     }
 
-    /* Copy into the TTBR1 direct-map alias; keep the user code page shared RO+X. */
+    /* Copy into the TTBR1 direct-map alias; keep user code shared RO+X. */
     const uintptr_t code_alias =
         (uintptr_t)0xffff000000000000ull + (uintptr_t)code_page;
     volatile uint32_t *destination = (volatile uint32_t *)code_alias;
@@ -372,7 +373,10 @@ static void run_process_scheduler_self_test(void) {
     for (size_t index = 0; index < code_size / sizeof(uint32_t); ++index) {
         destination[index] = source[index];
     }
-    synchronize_user_code_cache(code_alias, code_alias, code_size);
+    const uintptr_t shared_alias =
+        (uintptr_t)0xffff000000000000ull + (uintptr_t)shared_page;
+    volatile uint64_t *shared_counter = (volatile uint64_t *)shared_alias;
+    *shared_counter = 0u;
 
     const uint32_t space_a = fahim_address_space_create();
     const uint32_t space_b = fahim_address_space_create();
@@ -383,15 +387,31 @@ static void run_process_scheduler_self_test(void) {
 
     const uint64_t user_code_va = 0x0000000100200000ull;
     const uint64_t user_stack_va = 0x0000000100400000ull;
+    const uint64_t shared_user_va = 0x0000000100600000ull;
     if (fahim_address_space_map_user_page(
             space_a, user_code_va, code_page, FAHIM_USER_PAGE_RO_X) != 0 ||
         fahim_address_space_map_user_page(
             space_a, user_stack_va, stack_page_a, FAHIM_USER_PAGE_RW_XN) != 0 ||
         fahim_address_space_map_user_page(
+            space_a, shared_user_va, shared_page, FAHIM_USER_PAGE_RW_XN) != 0 ||
+        fahim_address_space_map_user_page(
             space_b, user_code_va, code_page, FAHIM_USER_PAGE_RO_X) != 0 ||
         fahim_address_space_map_user_page(
-            space_b, user_stack_va, stack_page_b, FAHIM_USER_PAGE_RW_XN) != 0) {
+            space_b, user_stack_va, stack_page_b, FAHIM_USER_PAGE_RW_XN) != 0 ||
+        fahim_address_space_map_user_page(
+            space_b, shared_user_va, shared_page, FAHIM_USER_PAGE_RW_XN) != 0) {
         console_write("Process Scheduler self-test: FAIL (user mapping)\n");
+        halt_forever();
+    }
+
+    /* Invalidate the instruction-cache alias through a mapped user VA. */
+    if (fahim_address_space_activate(space_a) != 0) {
+        console_write("Process Scheduler self-test: FAIL (cache-maintenance address space)\n");
+        halt_forever();
+    }
+    synchronize_user_code_cache(code_alias, (uintptr_t)user_code_va, code_size);
+    if (fahim_address_space_deactivate_current() != 0) {
+        console_write("Process Scheduler self-test: FAIL (cache-maintenance TTBR0 restore)\n");
         halt_forever();
     }
 
@@ -403,8 +423,38 @@ static void run_process_scheduler_self_test(void) {
         halt_forever();
     }
 
-    console_write("Process Scheduler: starting two EL0 tasks\n");
+    /* Re-arm the same upstream Generic Timer used by the IRQ self-test.
+     * The five-IRQ diagnostic limit is raised for continuous scheduler ticks. */
+    const int32_t timer_result = fahim_generic_timer_init(10u);
+    if (timer_result != 0 ||
+        fahim_generic_timer_set_irq_limit(UINT32_MAX) != 0) {
+        console_write("Process Scheduler self-test: FAIL (periodic timer setup)\n");
+        halt_forever();
+    }
+
+    console_write("Process Scheduler: starting two EL0 tasks with timer preemption\n");
+    /* ERET in each task's first-entry trampoline unmasks user IRQ delivery. */
     fahim_scheduler_start();
+
+    /* The scheduler returned only after both processes exited. Stop IRQs
+     * before inspecting the shared frame or releasing either address space. */
+    __asm__ volatile("msr daifset, #2\n\tisb" ::: "memory");
+    const uint32_t scheduler_ticks = fahim_generic_timer_irq_count();
+    fahim_generic_timer_stop();
+
+    if (scheduler_ticks == 0u || *shared_counter != 2u) {
+        console_write("Process Scheduler self-test: FAIL (timer preemption did not run both tasks) ticks=");
+        console_write_hex64(scheduler_ticks);
+        console_write(" shared=");
+        console_write_hex64(*shared_counter);
+        console_write("\n");
+        halt_forever();
+    }
+
+    console_write("Process Scheduler timer preemption ticks: ");
+    console_write_hex64(scheduler_ticks);
+    console_write("\n");
+
     if (fahim_scheduler_is_active()) {
         console_write("Process Scheduler self-test: FAIL (scheduler did not return)\n");
         halt_forever();
@@ -415,12 +465,13 @@ static void run_process_scheduler_self_test(void) {
         fahim_address_space_destroy(space_b) != 0 ||
         fahim_page_allocator_free(code_page, 1u) != 0 ||
         fahim_page_allocator_free(stack_page_a, 1u) != 0 ||
-        fahim_page_allocator_free(stack_page_b, 1u) != 0) {
+        fahim_page_allocator_free(stack_page_b, 1u) != 0 ||
+        fahim_page_allocator_free(shared_page, 1u) != 0) {
         console_write("Process Scheduler self-test: FAIL (cleanup)\n");
         halt_forever();
     }
 
-    console_write("Process Scheduler self-test: PASS (two EL0 tasks, round-robin yield, TTBR0 switching, syscalls, exit)\n");
+    console_write("Process Scheduler self-test: PASS (timer preemption, two EL0 tasks, TTBR0 switching, syscalls, exit)\n");
 }
 
 static void run_timer_irq_self_test(void) {
