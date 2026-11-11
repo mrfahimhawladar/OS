@@ -30,7 +30,7 @@ RUSTFLAGS ?=
 KERNEL_RUSTFLAGS := $(RUSTFLAGS) -C target-feature=-neon,-fp-armv8
 
 SOURCES := core/main.c core/console/fdt_uart.c core/memory/fdt_memory.c \
-           core/platform/fdt_gicv3.c core/exception.c \
+           core/platform/fdt_gicv3.c core/exception.c core/syscall.c \
            core/scheduler.c
 OBJECTS := $(patsubst %.c,$(BUILD)/%.o,$(SOURCES)) \
            $(BUILD)/arch/arm64/boot/entry.o \
