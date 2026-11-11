@@ -4,6 +4,8 @@
 #include "gicv3_driver.h"
 #include "generic_timer.h"
 #include "address_space.h"
+#include "scheduler.h"
+#include "syscall.h"
 
 void console_write(const char *text);
 void console_putc(char character);
@@ -44,6 +46,9 @@ void irq_handle(void) {
         console_write("IRQ Dispatcher: handled timer PPI 30, tick ");
         write_hex64(fahim_generic_timer_irq_count());
         console_write("\n");
+        if (fahim_scheduler_is_active()) {
+            fahim_scheduler_tick();
+        }
         return;
     }
 
@@ -135,33 +140,40 @@ void exception_handle(const uint64_t *registers, uint64_t vector) {
 
 
 /*
- * Lower-EL AArch64 synchronous entry. The current smoke test exits through
- * SVC #0xF02; other exceptions remain fatal until process fault handling exists.
+ * Lower-EL AArch64 synchronous entry. Each trap frame belongs to the
+ * interrupted task's EL1 kernel stack, so a scheduler switch may suspend this
+ * handler and resume it later without losing ELR/SPSR/SP_EL0.
  */
-void user_sync_handle(const uint64_t *registers) {
-    uint64_t esr;
-    __asm__ volatile("mrs %0, ESR_EL1" : "=r"(esr));
-
-    const uint64_t exception_class = (esr >> 26) & 0x3fu;
-    const uint64_t immediate = esr & 0xffffu;
-    if (exception_class != 0x15u || immediate != 0x0f02u) {
-        exception_handle(registers, 8u);
-    }
-
-    const uint64_t return_pc = fahim_address_space_user_return_pc();
-    if (return_pc == 0u || fahim_address_space_deactivate_current() != 0) {
-        console_write("EL0 SVC: failed to restore kernel TTBR0\n");
+void user_sync_handle(uint64_t *registers) {
+    if (registers == NULL) {
         exception_halt();
     }
 
-    /* Resume the saved kernel trampoline in EL1h with all IRQ masks set. */
-    const uint64_t return_spsr = 0x3c5u;
-    __asm__ volatile(
-        "msr ELR_EL1, %0\n\t"
-        "msr SPSR_EL1, %1\n\t"
-        "isb"
-        :
-        : "r"(return_pc), "r"(return_spsr)
-        : "memory"
-    );
+    uint64_t esr;
+    __asm__ volatile("mrs %0, ESR_EL1" : "=r"(esr));
+    const uint64_t exception_class = (esr >> 26) & 0x3fu;
+    const uint64_t immediate = esr & 0xffffu;
+    if (exception_class != 0x15u) {
+        exception_handle(registers, 8u);
+    }
+
+    /* Legacy one-shot EL0 smoke-test exit. */
+    if (immediate == 0x0f02u) {
+        const uint64_t return_pc = fahim_address_space_user_return_pc();
+        if (return_pc == 0u || fahim_address_space_deactivate_current() != 0) {
+            console_write("EL0 SVC: failed to restore kernel TTBR0\n");
+            exception_halt();
+        }
+        registers[31] = return_pc; /* ELR_EL1 in the saved trap frame */
+        registers[32] = 0x3c5u;    /* EL1h, with DAIF masked */
+        return;
+    }
+
+    /* SVC #0 is the initial AAPCS64 syscall ABI (x8 number, x0-x5 args). */
+    if (immediate == 0u && fahim_scheduler_is_active()) {
+        fahim_syscall_dispatch(registers);
+        return;
+    }
+
+    exception_handle(registers, 8u);
 }
