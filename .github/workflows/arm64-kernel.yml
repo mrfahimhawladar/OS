@@ -30,12 +30,13 @@ jobs:
       - name: Build freestanding ARM64 kernel
         run: make -C mobile/kernel CROSS_COMPILE=aarch64-linux-gnu-
 
-      - name: Inspect ELF
+      - name: Inspect ELF and kernel boundaries
         run: |
           aarch64-linux-gnu-readelf -h mobile/kernel/build/arm64-qemu/fahim-kernel.elf
+          aarch64-linux-gnu-readelf -s mobile/kernel/build/arm64-qemu/fahim-kernel.elf | grep -E '__kernel_(start|end)'
           aarch64-linux-gnu-size mobile/kernel/build/arm64-qemu/fahim-kernel.elf
 
-      - name: Boot kernel in QEMU and verify serial output
+      - name: Boot kernel in QEMU and verify memory exclusions
         shell: bash
         run: |
           set +e
@@ -57,11 +58,13 @@ jobs:
             exit "$qemu_status"
           fi
           grep -q "FAHIM OS ARM64" qemu-arm64.log
-          grep -q "Device Tree: parsed" qemu-arm64.log
           grep -q "PL011 UART: initialized from Device Tree" qemu-arm64.log
-          grep -q "FDT memory map: detected" qemu-arm64.log
-          grep -q "RAM region base: 0x0000000040000000" qemu-arm64.log
-          grep -q "RAM region size: 0x0000000020000000 bytes" qemu-arm64.log
+          grep -q "Memory layout: validated" qemu-arm64.log
+          grep -q "RAM region base: 0x0000000040000000 size: 0x0000000020000000 bytes" qemu-arm64.log
+          grep -q "Reserved region base: 0x0000000040000000" qemu-arm64.log
+          grep -q "Reserved region base: 0x0000000040200000" qemu-arm64.log
+          grep -q "Usable region base: 0x0000000040100000" qemu-arm64.log
+          grep -q "Milestone 3: reserved memory exclusions." qemu-arm64.log
 
       - name: Upload ARM64 kernel ELF
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
