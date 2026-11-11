@@ -19,6 +19,8 @@ typedef enum {
     FAHIM_TASK_READY,
     FAHIM_TASK_RUNNING,
     FAHIM_TASK_SLEEPING,
+    FAHIM_TASK_WAITING_CHILD,
+    FAHIM_TASK_ZOMBIE,
     FAHIM_TASK_DEAD
 } fahim_task_state_t;
 
@@ -26,10 +28,13 @@ typedef struct {
     fahim_task_context_t context;
     fahim_task_state_t state;
     uint32_t pid;
+    uint32_t parent_pid;
     uint32_t address_space;
     uint64_t user_entry;
     uint64_t user_stack_top;
     uint64_t wake_at_tick;
+    uint32_t wait_target_pid;
+    int64_t exit_status;
 } fahim_task_t;
 
 #define KERNEL_STACK_BYTES 16384u
@@ -46,6 +51,8 @@ static uint64_t scheduler_ticks;
 static uint32_t scheduler_idle_waits;
 static uint32_t scheduler_wakeups;
 static uint32_t scheduler_user_faults;
+static uint32_t scheduler_reaps;
+static uint32_t scheduler_waitpid_successes;
 
 extern void fahim_context_switch(fahim_task_context_t *previous,
                                  const fahim_task_context_t *next);
@@ -56,6 +63,15 @@ static void scheduler_halt(void) {
     for (;;) {
         __asm__ volatile("wfe" ::: "memory");
     }
+}
+
+static int find_task_by_pid(uint32_t pid) {
+    for (uint32_t i = 0u; i < task_count; ++i) {
+        if (tasks[i].state != FAHIM_TASK_DEAD && tasks[i].pid == pid) {
+            return (int)i;
+        }
+    }
+    return -1;
 }
 
 static int has_live_tasks(void) {
@@ -119,7 +135,6 @@ static void switch_to_task(int next_index) {
         fahim_context_switch(&tasks[previous_index].context,
                              &tasks[next_index].context);
     } else {
-        /* bootstrap_context is the kernel idle/boot continuation. */
         fahim_context_switch(&bootstrap_context, &tasks[next_index].context);
     }
 }
@@ -146,13 +161,59 @@ static void switch_to_idle(void) {
     fahim_context_switch(&tasks[previous_index].context, &bootstrap_context);
 }
 
+/* Drop an inactive process translation and its ASID/page-table hierarchy. */
+static void reap_task_address_space(uint32_t index) {
+    const uint32_t handle = tasks[index].address_space;
+    if (handle == UINT32_MAX) {
+        return;
+    }
+    if (fahim_address_space_destroy(handle) != 0) {
+        scheduler_halt();
+    }
+    tasks[index].address_space = UINT32_MAX;
+    scheduler_reaps++;
+}
+
+static void reap_orphaned_zombies(uint32_t parent_pid) {
+    for (uint32_t i = 0u; i < task_count; ++i) {
+        if (tasks[i].parent_pid != parent_pid) {
+            continue;
+        }
+        tasks[i].parent_pid = 0u;
+        if (tasks[i].state == FAHIM_TASK_ZOMBIE) {
+            reap_task_address_space(i);
+            tasks[i].state = FAHIM_TASK_DEAD;
+        }
+    }
+}
+
+static void wake_waiting_parent(uint32_t child_index) {
+    const uint32_t parent_pid = tasks[child_index].parent_pid;
+    if (parent_pid == 0u) {
+        return;
+    }
+    const int parent_index = find_task_by_pid(parent_pid);
+    if (parent_index < 0) {
+        tasks[child_index].parent_pid = 0u;
+        return;
+    }
+
+    fahim_task_t *parent = &tasks[parent_index];
+    if (parent->state == FAHIM_TASK_WAITING_CHILD &&
+        (parent->wait_target_pid == 0u ||
+         parent->wait_target_pid == tasks[child_index].pid)) {
+        parent->wait_target_pid = 0u;
+        parent->state = FAHIM_TASK_READY;
+    }
+}
+
 int fahim_scheduler_create_user(uint32_t address_space,
                                 uint64_t entry,
                                 uint64_t user_stack_top,
                                 uint64_t pid) {
     if (scheduler_active || task_count >= FAHIM_MAX_USER_TASKS ||
         address_space == UINT32_MAX || entry == 0u || user_stack_top == 0u ||
-        pid > UINT32_MAX) {
+        pid > UINT32_MAX || find_task_by_pid((uint32_t)pid) >= 0) {
         return -1;
     }
 
@@ -180,6 +241,40 @@ int fahim_scheduler_create_user(uint32_t address_space,
     return (int)index;
 }
 
+int fahim_scheduler_set_parent(uint32_t child_pid, uint32_t parent_pid) {
+    if (scheduler_active || child_pid == parent_pid) {
+        return -1;
+    }
+    const int child = find_task_by_pid(child_pid);
+    if (child < 0) {
+        return -2;
+    }
+    if (parent_pid == 0u) {
+        tasks[child].parent_pid = 0u;
+        return 0;
+    }
+    const int parent = find_task_by_pid(parent_pid);
+    if (parent < 0) {
+        return -3;
+    }
+
+    /* Reject a cycle before linking the parent chain. */
+    uint32_t ancestor = parent_pid;
+    for (uint32_t depth = 0u; depth < task_count; ++depth) {
+        if (ancestor == child_pid) {
+            return -4;
+        }
+        const int index = find_task_by_pid(ancestor);
+        if (index < 0 || tasks[index].parent_pid == 0u) {
+            break;
+        }
+        ancestor = tasks[index].parent_pid;
+    }
+
+    tasks[child].parent_pid = parent_pid;
+    return 0;
+}
+
 void fahim_scheduler_start(void) {
     if (scheduler_active || task_count == 0u) {
         return;
@@ -189,6 +284,8 @@ void fahim_scheduler_start(void) {
     scheduler_idle_waits = 0u;
     scheduler_wakeups = 0u;
     scheduler_user_faults = 0u;
+    scheduler_reaps = 0u;
+    scheduler_waitpid_successes = 0u;
     scheduler_active = 1;
 
     const int first = pick_next_task();
@@ -196,7 +293,6 @@ void fahim_scheduler_start(void) {
         switch_to_task(first);
     }
 
-    /* If all remaining tasks sleep, WFI until the Generic Timer wakes one. */
     while (has_live_tasks()) {
         __asm__ volatile(
             "msr daifclr, #2\n\t"
@@ -259,6 +355,56 @@ int fahim_scheduler_sleep_current(uint64_t milliseconds) {
     return 0;
 }
 
+int64_t fahim_scheduler_waitpid(uint32_t target_pid, int64_t *exit_status) {
+    if (!scheduler_active || current_task < 0 || exit_status == NULL) {
+        return -1;
+    }
+
+    const uint32_t parent_pid = tasks[current_task].pid;
+    for (;;) {
+        int matching_child = -1;
+        int zombie_child = -1;
+        for (uint32_t i = 0u; i < task_count; ++i) {
+            if (tasks[i].state == FAHIM_TASK_DEAD ||
+                tasks[i].parent_pid != parent_pid ||
+                (target_pid != 0u && tasks[i].pid != target_pid)) {
+                continue;
+            }
+            matching_child = (int)i;
+            if (tasks[i].state == FAHIM_TASK_ZOMBIE) {
+                zombie_child = (int)i;
+                break;
+            }
+        }
+
+        if (matching_child < 0) {
+            return -10; /* ECHILD: no matching child exists */
+        }
+
+        if (zombie_child >= 0) {
+            fahim_task_t *child = &tasks[zombie_child];
+            const uint32_t child_pid = child->pid;
+            *exit_status = child->exit_status;
+            reap_task_address_space((uint32_t)zombie_child);
+            child->state = FAHIM_TASK_DEAD;
+            child->parent_pid = 0u;
+            scheduler_waitpid_successes++;
+            return (int64_t)child_pid;
+        }
+
+        tasks[current_task].wait_target_pid = target_pid;
+        tasks[current_task].state = FAHIM_TASK_WAITING_CHILD;
+
+        const int next = pick_next_task();
+        if (next >= 0) {
+            switch_to_task(next);
+        } else {
+            switch_to_idle();
+        }
+        /* Child exit wakes this task; re-check its zombie record on resume. */
+    }
+}
+
 void fahim_scheduler_tick(void) {
     if (!scheduler_active) {
         return;
@@ -280,14 +426,32 @@ void fahim_scheduler_tick(void) {
     }
 }
 
-void fahim_scheduler_exit_current(void) {
+static void scheduler_exit_current_with_status(int64_t status) {
     if (!scheduler_active || current_task < 0) {
         scheduler_halt();
     }
 
     const int previous = current_task;
-    tasks[previous].state = FAHIM_TASK_DEAD;
+    const uint32_t exiting_pid = tasks[previous].pid;
+    tasks[previous].exit_status = status;
     tasks[previous].wake_at_tick = 0u;
+
+    const int parent = tasks[previous].parent_pid != 0u
+        ? find_task_by_pid(tasks[previous].parent_pid) : -1;
+    if (parent >= 0 && tasks[parent].state != FAHIM_TASK_DEAD) {
+        tasks[previous].state = FAHIM_TASK_ZOMBIE;
+        wake_waiting_parent((uint32_t)previous);
+    } else {
+        tasks[previous].parent_pid = 0u;
+        tasks[previous].state = FAHIM_TASK_DEAD;
+        reap_orphaned_zombies(exiting_pid);
+
+        /* Restore the kernel TTBR0 before destroying this inactive page table. */
+        if (fahim_address_space_switch(UINT32_MAX) != 0) {
+            scheduler_halt();
+        }
+        reap_task_address_space((uint32_t)previous);
+    }
 
     const int next = pick_next_task();
     if (next >= 0) {
@@ -297,6 +461,10 @@ void fahim_scheduler_exit_current(void) {
     }
 
     scheduler_halt();
+}
+
+void fahim_scheduler_exit_current(uint64_t status) {
+    scheduler_exit_current_with_status((int64_t)status);
 }
 
 uint64_t fahim_scheduler_current_pid(void) {
@@ -319,14 +487,21 @@ uint32_t fahim_scheduler_user_fault_count(void) {
     return scheduler_user_faults;
 }
 
+uint32_t fahim_scheduler_reap_count(void) {
+    return scheduler_reaps;
+}
+
+uint32_t fahim_scheduler_waitpid_success_count(void) {
+    return scheduler_waitpid_successes;
+}
+
 void fahim_scheduler_fault_current(void) {
     if (!scheduler_active || current_task < 0) {
         scheduler_halt();
     }
     scheduler_user_faults++;
-    fahim_scheduler_exit_current();
+    scheduler_exit_current_with_status(-11);
 }
-
 
 void fahim_scheduler_reset(void) {
     if (scheduler_active) {
@@ -335,7 +510,9 @@ void fahim_scheduler_reset(void) {
     for (uint32_t i = 0u; i < task_count; ++i) {
         tasks[i].state = FAHIM_TASK_DEAD;
         tasks[i].address_space = UINT32_MAX;
+        tasks[i].parent_pid = 0u;
         tasks[i].wake_at_tick = 0u;
+        tasks[i].wait_target_pid = 0u;
     }
     task_count = 0u;
     current_task = -1;
@@ -343,4 +520,6 @@ void fahim_scheduler_reset(void) {
     scheduler_idle_waits = 0u;
     scheduler_wakeups = 0u;
     scheduler_user_faults = 0u;
+    scheduler_reaps = 0u;
+    scheduler_waitpid_successes = 0u;
 }
