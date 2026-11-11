@@ -9,8 +9,9 @@ PHDRS
 
 SECTIONS
 {
-    /* QEMU virt reserves the first 1 MiB of RAM for its bare-metal DTB. */
+    /* QEMU virt places its bare-metal DTB at 0x40000000. */
     . = 0x40200000;
+    __kernel_start = .;
 
     .text :
     {
@@ -39,6 +40,9 @@ SECTIONS
         *(COMMON)
         __bss_end = .;
     } :data
+
+    . = ALIGN(4K);
+    __kernel_end = .;
 
     /DISCARD/ :
     {
