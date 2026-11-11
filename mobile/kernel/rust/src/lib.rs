@@ -568,25 +568,34 @@ static KERNEL_MAPPING: KernelMappingStorage =
     KernelMappingStorage(UnsafeCell::new(MaybeUninit::uninit()));
 static MMU_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
-const NORMAL_RW_XN: El1Attributes =
-    El1Attributes::VALID | El1Attributes::ATTRIBUTE_INDEX_1
-    | El1Attributes::INNER_SHAREABLE | El1Attributes::ACCESSED
-    | El1Attributes::PXN | El1Attributes::UXN;
+const NORMAL_RW_XN: El1Attributes = El1Attributes::VALID
+    .union(El1Attributes::ATTRIBUTE_INDEX_1)
+    .union(El1Attributes::INNER_SHAREABLE)
+    .union(El1Attributes::ACCESSED)
+    .union(El1Attributes::PXN)
+    .union(El1Attributes::UXN);
 
-const NORMAL_CODE_RO: El1Attributes =
-    El1Attributes::VALID | El1Attributes::ATTRIBUTE_INDEX_1
-    | El1Attributes::INNER_SHAREABLE | El1Attributes::READ_ONLY
-    | El1Attributes::ACCESSED | El1Attributes::UXN;
+const NORMAL_CODE_RO: El1Attributes = El1Attributes::VALID
+    .union(El1Attributes::ATTRIBUTE_INDEX_1)
+    .union(El1Attributes::INNER_SHAREABLE)
+    .union(El1Attributes::READ_ONLY)
+    .union(El1Attributes::ACCESSED)
+    .union(El1Attributes::UXN);
 
-const NORMAL_RO_XN: El1Attributes =
-    El1Attributes::VALID | El1Attributes::ATTRIBUTE_INDEX_1
-    | El1Attributes::INNER_SHAREABLE | El1Attributes::READ_ONLY
-    | El1Attributes::ACCESSED | El1Attributes::PXN | El1Attributes::UXN;
+const NORMAL_RO_XN: El1Attributes = El1Attributes::VALID
+    .union(El1Attributes::ATTRIBUTE_INDEX_1)
+    .union(El1Attributes::INNER_SHAREABLE)
+    .union(El1Attributes::READ_ONLY)
+    .union(El1Attributes::ACCESSED)
+    .union(El1Attributes::PXN)
+    .union(El1Attributes::UXN);
 
-const DEVICE_XN: El1Attributes =
-    El1Attributes::VALID | El1Attributes::ATTRIBUTE_INDEX_0
-    | El1Attributes::OUTER_SHAREABLE | El1Attributes::ACCESSED
-    | El1Attributes::PXN | El1Attributes::UXN;
+const DEVICE_XN: El1Attributes = El1Attributes::VALID
+    .union(El1Attributes::ATTRIBUTE_INDEX_0)
+    .union(El1Attributes::OUTER_SHAREABLE)
+    .union(El1Attributes::ACCESSED)
+    .union(El1Attributes::PXN)
+    .union(El1Attributes::UXN);
 
 fn range_is_inside_ram(ram: &[CMemoryRegion], start: usize, end: usize) -> bool {
     if start >= end { return false; }
