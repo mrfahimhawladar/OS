@@ -441,7 +441,8 @@ __user_process_code_start:
     b.ne    .Lwaitpid_failed
 
     ldr     w1, [x10, #8]
-    movz    w2, #0x2a, lsl #8   /* POSIX normal-exit status 42 << 8 */
+    movz    w2, #0x2a           /* POSIX normal-exit status 42 << 8 */
+    lsl     w2, w2, #8
     cmp     w1, w2
     b.ne    .Lwaitpid_failed
 
