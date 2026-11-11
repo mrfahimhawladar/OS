@@ -393,7 +393,8 @@ static void run_process_scheduler_self_test(void) {
     const uintptr_t shared_alias =
         (uintptr_t)0xffff000000000000ull + (uintptr_t)shared_page;
     volatile uint64_t *shared_counter = (volatile uint64_t *)shared_alias;
-    *shared_counter = 0u;
+    shared_counter[0] = 0u;
+    shared_counter[1] = 0u;
 
     const uint32_t space_parent = fahim_address_space_create();
     const uint32_t space_child = fahim_address_space_create();
