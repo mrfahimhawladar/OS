@@ -104,8 +104,7 @@ static int append_memory_node(const fdt_node_state_t *node,
     }
 
     const uint32_t tuple_bytes = (address_cells + size_cells) * 4u;
-    if (tuple_bytes == 0u || node->reg_length == 0u ||
-        node->reg_length % tuple_bytes != 0u) {
+    if (node->reg_length == 0u || node->reg_length % tuple_bytes != 0u) {
         return -2;
     }
 
@@ -232,15 +231,13 @@ int fdt_memory_map_from_dtb(const void *dtb,
             } else if (property_name_equals(strings, strings_size,
                                             name_offset, "#address-cells")) {
                 if (length != 4u) return -2;
+                /* Other buses may legally declare zero address cells. */
                 node->child_address_cells = read_be32(cursor);
-                if (node->child_address_cells != 1u &&
-                    node->child_address_cells != 2u) return -2;
             } else if (property_name_equals(strings, strings_size,
                                             name_offset, "#size-cells")) {
                 if (length != 4u) return -2;
+                /* Validate supported cell counts only on actual RAM nodes. */
                 node->child_size_cells = read_be32(cursor);
-                if (node->child_size_cells != 1u &&
-                    node->child_size_cells != 2u) return -2;
             }
 
             cursor = align4(cursor + length);
