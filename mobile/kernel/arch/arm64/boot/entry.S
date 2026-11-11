@@ -351,6 +351,23 @@ __user_smoke_code_end:
 .global __user_process_code_start
 .global __user_process_code_end
 __user_process_code_start:
+    /* Read a message from the RO+X image using checked copy_from_user. */
+    adr     x0, .Luser_message
+    movz    x1, #5
+    movz    x8, #7
+    svc     #0                  /* SYS_WRITE("Fahim") */
+    cmp     x0, #5
+    b.ne    .Lwaitpid_failed
+
+    /* A kernel-half pointer must be rejected without dereferencing it. */
+    movz    x0, #0xffff, lsl #48
+    movz    x1, #5
+    movz    x8, #7
+    svc     #0
+    movn    x2, #13              /* -EFAULT */
+    cmp     x0, x2
+    b.ne    .Lwaitpid_failed
+
     movz    x8, #3
     svc     #0                  /* x0 = process id */
     movz    x1, #0xa
@@ -403,18 +420,36 @@ __user_process_code_start:
     svc     #0                  /* child exits with status 42 */
 
 .Lparent_wait:
+    /* A read-only code page is not a valid wait status destination. */
     movz    x0, #202
+    movz    x1, #0x20, lsl #16
+    movk    x1, #0x1, lsl #32  /* 0x100200000: RO+X code page */
     movz    x8, #6
-    svc     #0                  /* SYS_WAITPID(child=202); x0=pid, x1=status */
+    svc     #0
+    movn    x2, #13              /* -EFAULT */
+    cmp     x0, x2
+    b.ne    .Lwaitpid_failed
+
+    /* Retry with a mapped RW+XN status word in the parent's shared data page. */
+    movz    x0, #202
+    movz    x1, #0x60, lsl #16
+    movk    x1, #0x1, lsl #32
+    add     x1, x1, #8           /* shared_user_va + sizeof(uint64_t) */
+    movz    x8, #6
+    svc     #0                  /* SYS_WAITPID; x0=pid, status copied to x1 ptr */
     cmp     x0, #202
     b.ne    .Lwaitpid_failed
-    cmp     x1, #42
+
+    ldr     w1, [x10, #8]
+    movz    w2, #0x2a, lsl #8   /* POSIX normal-exit status 42 << 8 */
+    cmp     w1, w2
     b.ne    .Lwaitpid_failed
+
     movz    x8, #3
     svc     #0
     movz    x1, #0xd
     movz    x8, #4
-    svc     #0                  /* marker D: child reaped with status 42 */
+    svc     #0                  /* marker D: child status copied and reaped */
     movz    x0, #0
     movz    x8, #1
     svc     #0                  /* parent exits */
@@ -425,6 +460,8 @@ __user_process_code_start:
 .Luser_process_halt:
     wfe
     b       .Luser_process_halt
+.Luser_message:
+    .ascii  "Fahim"
 __user_process_code_end:
 
 /* Fault-isolation test process: attempt to write to its own RO+X code page. */
