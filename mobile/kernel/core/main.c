@@ -9,6 +9,7 @@
 #include "mmu.h"
 #include "address_space.h"
 #include "scheduler.h"
+#include "scheduler.h"
 #include "console.h"
 
 extern uint8_t __kernel_start[];
@@ -20,6 +21,8 @@ extern uint8_t __rodata_end[];
 extern uint8_t __exception_vectors[];
 extern const uint32_t __user_smoke_code_start[];
 extern const uint32_t __user_smoke_code_end[];
+extern const uint32_t __user_process_code_start[];
+extern const uint32_t __user_process_code_end[];
 extern const uint32_t __user_process_code_start[];
 extern const uint32_t __user_process_code_end[];
 extern uint64_t fahim_enter_user(uint64_t user_entry, uint64_t user_stack_top);
