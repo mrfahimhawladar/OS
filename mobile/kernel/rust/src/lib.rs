@@ -485,6 +485,7 @@ pub extern "C" fn fahim_page_allocator_self_test() -> i32 {
 
 const PAGE_TABLE_RECORDS: usize = 64;
 const MMU_PAGE_BYTES: usize = 4096;
+const HIGH_HALF_DIRECT_MAP_BASE: usize = 0xffff_0000_0000_0000;
 const _: [(); MMU_PAGE_BYTES] = [(); size_of::<PageTable<El1Attributes>>()];
 const _: [(); MMU_PAGE_BYTES] = [(); align_of::<PageTable<El1Attributes>>()];
 
@@ -566,6 +567,8 @@ struct KernelMappingStorage(UnsafeCell<MaybeUninit<KernelMapping>>);
 unsafe impl Sync for KernelMappingStorage {}
 static KERNEL_MAPPING: KernelMappingStorage =
     KernelMappingStorage(UnsafeCell::new(MaybeUninit::uninit()));
+static KERNEL_UPPER_MAPPING: KernelMappingStorage =
+    KernelMappingStorage(UnsafeCell::new(MaybeUninit::uninit()));
 static MMU_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 const NORMAL_RW_XN: El1Attributes = El1Attributes::VALID
@@ -623,6 +626,27 @@ fn map_identity_range(
     ).map_err(|_| ())
 }
 
+fn map_high_alias_range(
+    mapping: &mut KernelMapping,
+    physical_base: usize,
+    size: usize,
+    attributes: El1Attributes,
+) -> Result<(), ()> {
+    if size == 0 || physical_base & (MMU_PAGE_BYTES - 1) != 0 {
+        return Err(());
+    }
+    let virtual_base = HIGH_HALF_DIRECT_MAP_BASE
+        .checked_add(physical_base)
+        .ok_or(())?;
+    let virtual_end = virtual_base.checked_add(size).ok_or(())?;
+    mapping.map_range(
+        &MemoryRegion::new(virtual_base, virtual_end),
+        PhysicalAddress(physical_base),
+        attributes,
+        Constraints::empty(),
+    ).map_err(|_| ())
+}
+
 /// Build and activate an EL1 identity map from the validated FDT memory map.
 /// The mapping is kept alive permanently because its page-table frames are active.
 #[no_mangle]
@@ -668,26 +692,44 @@ pub extern "C" fn fahim_mmu_init(
         || !range_is_inside_ram(ram, rodata_start, rodata_end)
     { return -5; }
 
-    let mut mapping = Mapping::with_asid_and_va_range(KernelTranslation::new(), 1, 0, El1And0, VaRange::Lower);
+    let mut mapping = Mapping::with_asid_and_va_range(
+        KernelTranslation::new(), 1, 0, El1And0, VaRange::Lower
+    );
+    let mut upper_mapping = Mapping::with_asid_and_va_range(
+        KernelTranslation::new(), 1, 0, El1And0, VaRange::Upper
+    );
 
-    // RAM is cacheable Normal memory, privileged RW and execute-never by default.
+    // Keep the lower identity map for the running boot PC and stack, and add
+    // a TTBR1 high-half direct-map alias for the same physical RAM.
     for region in ram {
         let (Ok(base), Ok(size)) = (usize::try_from(region.base), usize::try_from(region.size)) else { return -6; };
         if map_identity_range(&mut mapping, base, size, NORMAL_RW_XN).is_err() { return -7; }
+        if map_high_alias_range(&mut upper_mapping, base, size, NORMAL_RW_XN).is_err() { return -12; }
     }
 
     // Device-nGnRnE memory is used for all discovered controller/console registers.
     for region in devices {
         let (Ok(base), Ok(size)) = (usize::try_from(region.base), usize::try_from(region.size)) else { return -8; };
         if map_identity_range(&mut mapping, base, size, DEVICE_XN).is_err() { return -9; }
+        if map_high_alias_range(&mut upper_mapping, base, size, DEVICE_XN).is_err() { return -13; }
     }
 
-    // Refine permissions for executable kernel text and read-only constants.
+    // Refine permissions for executable kernel text and read-only constants in both aliases.
     if map_identity_range(&mut mapping, text_start, text_end - text_start, NORMAL_CODE_RO).is_err() {
         return -10;
     }
+    if map_high_alias_range(
+        &mut upper_mapping, text_start, text_end - text_start, NORMAL_CODE_RO
+    ).is_err() {
+        return -14;
+    }
     if map_identity_range(&mut mapping, rodata_start, rodata_end - rodata_start, NORMAL_RO_XN).is_err() {
         return -11;
+    }
+    if map_high_alias_range(
+        &mut upper_mapping, rodata_start, rodata_end - rodata_start, NORMAL_RO_XN
+    ).is_err() {
+        return -15;
     }
 
     const MAIR: Mair = Mair::EMPTY
@@ -697,18 +739,24 @@ pub extern "C" fn fahim_mmu_init(
             NormalMemory::WriteBackNonTransientReadWriteAllocate,
         ));
 
-    // 48-bit lower VA, 4 KiB granules, WB/WA inner-shareable walks.
-    // Disable TTBR1; cap IPS at 48 bits because this crate does not use LPA2.
+    // 48-bit lower and upper VA ranges, 4 KiB granules, WB/WA inner-shareable walks.
+    // EPD1 stays clear so TTBR1 walks are enabled. Cap IPS at 48 bits because
+    // this crate does not use LPA2.
     let ips = (mmfr0 & 0xf).min(5);
     let tcr: u64 = 16
         | (1 << 8) | (1 << 10) | (3 << 12)
         | (16 << 16) | (1 << 24) | (1 << 26) | (3 << 28) | (2 << 30)
-        | (1 << 23) | (ips << 32);
+        | (ips << 32);
 
-    // SAFETY: this slot is written once with IRQs masked, then remains static.
-    unsafe { (*KERNEL_MAPPING.0.get()).write(mapping); }
-    // SAFETY: just initialised, and will never be moved or dropped.
+    // SAFETY: both slots are written once with IRQs masked, then remain static.
+    unsafe {
+        (*KERNEL_MAPPING.0.get()).write(mapping);
+        (*KERNEL_UPPER_MAPPING.0.get()).write(upper_mapping);
+    }
+    // SAFETY: just initialised; neither mapping is moved or dropped.
     let active_mapping = unsafe { (&*KERNEL_MAPPING.0.get()).assume_init_ref() };
+    let active_upper_mapping =
+        unsafe { (&*KERNEL_UPPER_MAPPING.0.get()).assume_init_ref() };
 
     let mair_value: u64 = MAIR.into();
     unsafe {
@@ -725,9 +773,11 @@ pub extern "C" fn fahim_mmu_init(
         );
     }
 
-    // SAFETY: RAM, kernel sections, GIC and UART are all identity mapped; the
-    // page-table pages are allocated from that mapped RAM and the Mapping stays alive.
-    let _previous_ttbr = unsafe { active_mapping.activate() };
+    // SAFETY: the lower identity map keeps the current PC/stack valid. The
+    // upper mapping installs matching RAM and MMIO aliases in TTBR1. Both
+    // Mapping objects and their page-table frames remain alive permanently.
+    let _previous_ttbr0 = unsafe { active_mapping.activate() };
+    let _previous_ttbr1 = unsafe { active_upper_mapping.activate() };
 
     const SCTLR_RES1: u64 = 0x30d0_0800;
     let sctlr_enabled = sctlr | SCTLR_RES1 | 1 | (1 << 2) | (1 << 12);
@@ -747,6 +797,60 @@ pub extern "C" fn fahim_mmu_init(
 #[no_mangle]
 pub extern "C" fn fahim_mmu_is_enabled() -> u32 {
     if MMU_INITIALIZED.load(Ordering::Acquire) { 1 } else { 0 }
+}
+
+/// Verify one physical page through its TTBR1 high-half direct-map alias.
+/// The boot kernel continues executing through TTBR0's identity map.
+#[no_mangle]
+pub extern "C" fn fahim_mmu_high_alias_self_test() -> i32 {
+    if !MMU_INITIALIZED.load(Ordering::Acquire)
+        || !PAGE_ALLOCATOR_READY.load(Ordering::Acquire)
+    {
+        return -1;
+    }
+
+    let physical = match PAGE_ALLOCATOR.allocate_physical(
+        PAGE_SIZE, core::num::NonZeroUsize::new(1).unwrap()
+    ) {
+        Ok(address) => address,
+        Err(_) => return -2,
+    };
+    let Some(high_virtual) = HIGH_HALF_DIRECT_MAP_BASE.checked_add(physical) else {
+        // SAFETY: return the exact page allocated immediately above.
+        unsafe {
+            PAGE_ALLOCATOR.deallocate_physical(
+                PAGE_SIZE, core::num::NonZeroUsize::new(1).unwrap(), physical
+            );
+        }
+        return -3;
+    };
+
+    let mut pointer = core::ptr::without_provenance_mut::<u64>(high_virtual);
+    // SAFETY: TTBR1 maps this RAM page. The opaque asm establishes compiler
+    // provenance for the already mapped high virtual address.
+    unsafe {
+        core::arch::asm!(
+            "/* {0} */",
+            inout(reg) pointer,
+            options(nostack, preserves_flags)
+        );
+        core::hint::assert_unchecked(pointer.addr() == high_virtual);
+
+        pointer.write_volatile(0x4849_4748_5641_3031);
+        let valid = pointer.read_volatile() == 0x4849_4748_5641_3031;
+
+        // End the temporary high-alias allocation before returning the frame.
+        core::arch::asm!(
+            "/* {0} */",
+            in(reg) pointer,
+            options(nostack, preserves_flags)
+        );
+        PAGE_ALLOCATOR.deallocate_physical(
+            PAGE_SIZE, core::num::NonZeroUsize::new(1).unwrap(), physical
+        );
+
+        if valid { 0 } else { -4 }
+    }
 }
 
 #[panic_handler]

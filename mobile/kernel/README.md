@@ -61,11 +61,17 @@ The upstream crate is version 0.1.0 and explicitly marks its API unstable. Its p
 
 The kernel integrates upstream aarch64-paging 0.12.3 with a custom no-heap Translation adapter backed by the physical page allocator. Page-table frames are allocated as 4 KiB physical pages and remain owned by a static Mapping object for the lifetime of the active TTBR0 translation.
 
-The initial reference map is identity-mapped and uses a 48-bit lower VA range with 4 KiB granules. FDT-discovered RAM is mapped as cacheable Normal-WB memory; FDT-discovered GIC Distributor/Redistributor windows and the PL011 UART are mapped as Device-nGnRnE. Linker-provided kernel text and rodata boundaries receive separate RO/executable and RO/XN permissions; data and BSS remain RW/XN. MMU activation is refused if the MMU is already enabled or if kernel sections are not contained in RAM.
+The reference map keeps a 48-bit lower-VA identity mapping for the running boot PC and stack, and adds a 48-bit upper-VA direct-map alias through TTBR1. Both use 4 KiB granules. FDT-discovered RAM is mapped as cacheable Normal-WB memory; FDT-discovered GIC Distributor/Redistributor windows and the PL011 UART are mapped as Device-nGnRnE in both ranges. Linker-provided kernel text and rodata boundaries receive separate RO/executable and RO/XN permissions; data and BSS remain RW/XN.
 
-QEMU verification checks that execution and serial output continue after SCTLR_EL1.M is enabled, then allocates, writes, reads and frees a physical page through the identity mapping and runs the five Generic Timer IRQ test. This establishes the single-core QEMU EL1 identity-map path only; it is not a high-half kernel, isolated process address-space system, or physical-phone port.
+QEMU verification checks continued execution after SCTLR_EL1.M is enabled, tests physical-page read/write through the lower identity map, and separately tests read/write through a TTBR1 high-half alias. The kernel still executes from the lower identity address; this milestone does not yet relocate the kernel PC/stack or provide isolated EL0 process address spaces.
 
 The upstream page-table crate is MIT OR Apache-2.0 and is not an officially supported Google product. Third-party details and the exact pinned version are in THIRD_PARTY_NOTICES.md.
+
+## Verified milestone 6C: TTBR1 high-half direct-map alias
+
+The kernel builds a second upstream aarch64-paging Mapping for VaRange::Upper and installs it through TTBR1. It maps discovered RAM at 0xffff_0000_0000_0000 + physical_address, and maps discovered GIC/PL011 windows using Device-nGnRnE attributes. Kernel text and rodata retain the same RO/X and RO/XN permissions across both aliases. TCR_EL1.EPD1 is cleared so TTBR1 table walks are enabled.
+
+A QEMU self-test allocates a physical page, writes and reads a pattern through the high-half alias, then releases the frame. TTBR0's lower identity map remains active for the current boot PC and stack. This is a verified high-half direct-map alias, not yet a relocated high-half kernel or an EL0 process-address-space implementation.
 
 ## Reference platform and verification
 
@@ -90,15 +96,16 @@ Exception-test image: mobile/kernel/build/arm64-qemu-exception-test/fahim-kernel
 - Physical pages are now allocated from validated, page-aligned usable RAM on the single-core QEMU target. The bridge is identity-map-only and intentionally rejects initialization once the EL1 MMU is enabled.
 - Dynamic reserved-memory allocations and page-aligned allocation are not supported.
 - The current exception diagnostics are fatal for synchronous exceptions, FIQ and SError. Only the current-EL SPx IRQ vector has a returning dispatcher path so far.
-- The current MMU uses a single lower-VA identity map. There is no high-half kernel, EL0 process address space, demand paging, guard-page policy or SMP TLB shootdown yet.
+- The MMU now provides a TTBR1 high-half direct-map alias while the boot kernel still executes through TTBR0's lower identity map. There is no high-half PC/stack relocation, EL0 process address space, demand paging, guard-page policy or SMP TLB shootdown yet.
 - The upstream GICv3 driver is currently initialized for the single-core QEMU layout. The active dispatcher handles the EL1 physical timer PPI; general device IRQ registration, SPI routing, SMP and interrupt nesting remain future work.
 - The generic timer is now functional on the QEMU reference target. The scheduler, heap, storage, input, graphics, and touchscreen are not implemented.
 - This is not an Android image, phone ROM, or flashable artifact. QEMU success does not prove support for a real smartphone.
 
 ## Next milestones
 
-1. Add high-half kernel mapping, EL0 address spaces, and explicit mapping lifecycle/permission APIs
-2. Add allocator zones and SMP-safe page allocator publication with TLB shootdown
-3. Add scheduler and context switching
-4. Add the storage, input, display and touchscreen driver frameworks
-5. Develop a physical-device platform port after the memory and interrupt foundations are stable
+1. Relocate kernel execution and stack to the high-half mapping; add explicit mapping lifecycle/permission APIs
+2. Add EL0 address spaces, user/kernel isolation and TLB invalidation
+3. Add allocator zones and SMP-safe page allocator publication with TLB shootdown
+4. Add scheduler and context switching
+5. Add storage, input, display and touchscreen driver frameworks
+6. Develop a physical-device platform port after the memory and interrupt foundations are stable

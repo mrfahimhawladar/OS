@@ -164,6 +164,15 @@ static void run_mmu_self_test(const memory_layout_t *layout,
     }
 
     console_write("MMU self-test: PASS (RAM, Device MMIO, permissions, post-MMU page allocation)\n");
+
+    const int32_t high_alias_result = fahim_mmu_high_alias_self_test();
+    if (high_alias_result != 0) {
+        console_write("MMU high-half direct-map self-test: FAIL, code=");
+        console_write_hex64((uint64_t)(int64_t)high_alias_result);
+        console_write("\n");
+        halt_forever();
+    }
+    console_write("MMU high-half direct-map self-test: PASS (TTBR1 alias read/write)\n");
 }
 
 static void run_timer_irq_self_test(void) {
