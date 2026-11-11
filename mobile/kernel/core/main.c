@@ -42,7 +42,9 @@ void kernel_main(const void *dtb) {
         dtb, regions, MEMORY_MAP_MAX_REGIONS, &region_count);
 
     if (memory_result != 0) {
-        console_write("FDT memory map: FAILED\n");
+        console_write("FDT memory map: FAILED, code=");
+        console_write_hex64((uint64_t)(int64_t)memory_result);
+        console_write("\n");
         halt_forever();
     }
 
