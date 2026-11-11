@@ -341,9 +341,11 @@ __user_smoke_code_start:
     b       .Luser_smoke_wait
 __user_smoke_code_end:
 
-/* Two-process EL0 payload for the scheduler/SVC integration test.
- * SYS_GETPID=3, SYS_LOG=4, SYS_YIELD=2, SYS_EXIT=1, SVC immediate=0.
- * Both processes map this same read-only executable page into their own TTBR0.
+/* Two-process EL0 payload for the timer-preemption integration test.
+ * SYS_GETPID=3, SYS_LOG=4, SYS_EXIT=1, SVC immediate=0.
+ * Both processes share one RW page at 0x100600000. The first process spins
+ * until the second increments the shared word. Without a timer preemption,
+ * the first process can never make progress past this wait loop.
  */
 .balign 4
 .global __user_process_code_start
@@ -354,10 +356,20 @@ __user_process_code_start:
     movz    x1, #0xa
     movz    x8, #4
     svc     #0                  /* log first marker */
-    movz    x8, #2
-    svc     #0                  /* yield to the other process */
+
+    movz    x10, #0x60, lsl #16
+    movk    x10, #0x1, lsl #32  /* shared word at 0x100600000 */
+    ldr     x5, [x10]
+    add     x5, x5, #1
+    str     x5, [x10]
+
+.Lwait_for_peer:
+    ldr     x5, [x10]
+    cmp     x5, #2
+    b.lo    .Lwait_for_peer     /* force timer-driven task preemption */
+
     movz    x8, #3
-    svc     #0                  /* get pid again after resuming */
+    svc     #0                  /* get pid after the peer has run */
     movz    x1, #0xb
     movz    x8, #4
     svc     #0                  /* log second marker */
