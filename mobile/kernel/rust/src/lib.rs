@@ -9,7 +9,7 @@ use arm_gic::{
 };
 use arm_generic_timer::{
     sysreg::PhysicalTimer,
-    Timer,
+    Timer, TimerInterface,
 };
 use core::{
     panic::PanicInfo,
