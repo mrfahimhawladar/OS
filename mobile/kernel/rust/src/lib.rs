@@ -1277,6 +1277,35 @@ pub extern "C" fn fahim_address_space_activate(handle: u32) -> i32 {
 /// Restore the TTBR0 value saved by the current address space's activate call.
 /// Mapping::deactivate also invalidates this address space's ASID-tagged TLB.
 #[no_mangle]
+/// Switch the current single-core TTBR0 address space.
+/// A switch always passes through the shared kernel root so every task retains
+/// the same supervisor-only identity mappings and TTBR1 high-half kernel map.
+#[no_mangle]
+pub extern "C" fn fahim_address_space_switch(next_handle: u32) -> i32 {
+    let current = ACTIVE_ADDRESS_SPACE_HANDLE.load(Ordering::Acquire);
+    if current == next_handle {
+        return 0;
+    }
+
+    if current != NO_ACTIVE_ADDRESS_SPACE {
+        let result = fahim_address_space_deactivate_current();
+        if result != 0 {
+            return -1;
+        }
+    }
+
+    if next_handle != NO_ACTIVE_ADDRESS_SPACE {
+        let result = fahim_address_space_activate(next_handle);
+        if result != 0 {
+            if current != NO_ACTIVE_ADDRESS_SPACE {
+                let _ = fahim_address_space_activate(current);
+            }
+            return -2;
+        }
+    }
+    0
+}
+
 pub extern "C" fn fahim_address_space_deactivate_current() -> i32 {
     let handle = ACTIVE_ADDRESS_SPACE_HANDLE.load(Ordering::Acquire);
     if handle == NO_ACTIVE_ADDRESS_SPACE {
