@@ -368,11 +368,30 @@ __user_process_code_start:
     cmp     x5, #2
     b.lo    .Lwait_for_peer     /* force timer-driven task preemption */
 
+    /* Record entry to sleep, then use different deadlines per process. */
     movz    x8, #3
-    svc     #0                  /* get pid after the peer has run */
+    svc     #0
+    movz    x1, #0xc
+    movz    x8, #4
+    svc     #0                  /* marker C: entering sleep */
+
+    movz    x8, #3
+    svc     #0                  /* x0 = pid */
+    cmp     x0, #101
+    b.eq    .Lsleep_30ms
+    movz    x0, #50
+    b       .Lsleep_now
+.Lsleep_30ms:
+    movz    x0, #30
+.Lsleep_now:
+    movz    x8, #5
+    svc     #0                  /* SYS_SLEEP milliseconds */
+
+    movz    x8, #3
+    svc     #0
     movz    x1, #0xb
     movz    x8, #4
-    svc     #0                  /* log second marker */
+    svc     #0                  /* marker B: resumed after wakeup */
     movz    x0, #0
     movz    x8, #1
     svc     #0                  /* exit */
