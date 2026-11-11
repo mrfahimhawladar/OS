@@ -2,7 +2,7 @@
 
 This is the new ARM64 kernel implementation. The root-level x86 `kernel.cpp` is a separate learning prototype and is not reused as the mobile kernel.
 
-## Implemented milestone 1
+## Verified milestone 1: ARM64 boot + serial console
 
 - AArch64 assembly entry point and bootstrap stack
 - Freestanding C kernel entry
@@ -10,9 +10,13 @@ This is the new ARM64 kernel implementation. The root-level x86 `kernel.cpp` is 
 - PL011 serial UART discovery via Device Tree `compatible` and `reg` properties
 - Polled serial text output
 
-The first target is QEMU's generic ARM64 `virt` platform. QEMU places its bare-metal DTB at the start of RAM (0x40000000) and reserves a 1 MiB region for it. The kernel ELF is linked at 0x40200000 to keep the image clear of that reservation. The UART is discovered from the DTB rather than assuming a phone-specific hardware address.
+The first target is QEMU's generic ARM64 `virt` platform. QEMU places its bare-metal DTB at the start of RAM (0x40000000) and reserves a 1 MiB region for it. The kernel ELF is linked at 0x40200000 to keep the image clear of that reservation.
 
-## Build
+**Verification result:** GitHub Actions successfully compiled the AArch64 ELF, booted it in QEMU, and matched the expected serial banner and Device Tree/UART messages.
+
+[Successful QEMU build and boot test](https://github.com/mrfahimhawladar/OS/actions/runs/42929151504)
+
+## Build locally
 
 Install an AArch64 Linux cross-toolchain, then:
 
@@ -25,8 +29,6 @@ Output:
 ```
 mobile/kernel/build/arm64-qemu/fahim-kernel.elf
 ```
-
-The `.github/workflows/arm64-kernel.yml` workflow builds the ELF and runs a QEMU serial-console smoke test.
 
 ## Important limits
 
