@@ -49,6 +49,14 @@ This test proves the single-core QEMU reference path for timer programming, IRQ 
 
 Third-party source and licensing details are recorded in THIRD_PARTY_NOTICES.md. The upstream GIC and Generic Timer crates are dual-licensed under MIT OR Apache-2.0.
 
+## Verified milestone 6A: physical page allocator
+
+The kernel integrates upstream frame-alloc 0.1.0, a dependency-free no_std physical frame allocator. Fahim OS supplies the boot memory map as sorted, non-overlapping, 4 KiB-aligned usable ranges. The upstream SummaryBuddyAllocator keeps its bitmap in usable RAM, preserves every gap/reservation, and supports contiguous naturally-aligned frame allocations without a heap.
+
+The Rust bridge uses an identity physical-memory provenance adapter only while SCTLR_EL1.M is clear. Initialization fails closed if the MMU is already enabled; the adapter must be replaced with a direct-map/page-table-aware implementation when MMU support is introduced. QEMU self-tests allocate one 4 KiB page and one contiguous four-page block, verify alignment and that both remain inside registered usable ranges, write/read physical memory, free both allocations, allocate again, and confirm free capacity is restored.
+
+The upstream crate is version 0.1.0 and explicitly marks its API unstable. Its published documentation reports Miri, concurrency, and audit testing, but its kernel demo is x86-64; ARM integration is not claimed upstream. Fahim OS validates this integration separately on the ARM64 QEMU reference machine. SMP, interrupt-time allocation, and physical-phone memory mapping are not yet claimed.
+
 ## Reference platform and verification
 
 GitHub Actions cross-compiles and boots the kernel in QEMU virt with 512 MiB RAM and GICv3 explicitly selected. It checks the RAM/reserved/usable ranges, GICv3 initialization, five timer IRQ deliveries, and the controlled synchronous-exception test.
@@ -69,7 +77,7 @@ Exception-test image: mobile/kernel/build/arm64-qemu-exception-test/fahim-kernel
 
 ## Important limits
 
-- Usable memory is detected and reported only; no physical allocator uses it yet.
+- Physical pages are now allocated from validated, page-aligned usable RAM on the single-core QEMU target. The bridge is identity-map-only and intentionally rejects initialization once the EL1 MMU is enabled.
 - Dynamic reserved-memory allocations and page-aligned allocation are not supported.
 - The current exception diagnostics are fatal for synchronous exceptions, FIQ and SError. Only the current-EL SPx IRQ vector has a returning dispatcher path so far.
 - The upstream GICv3 driver is currently initialized for the single-core QEMU layout. The active dispatcher handles the EL1 physical timer PPI; general device IRQ registration, SPI routing, SMP and interrupt nesting remain future work.
@@ -78,8 +86,8 @@ Exception-test image: mobile/kernel/build/arm64-qemu-exception-test/fahim-kernel
 
 ## Next milestones
 
-1. Add a physical page allocator using validated, page-aligned usable RAM
-2. Add MMU/page tables and establish device-memory mappings
+1. Add MMU/page tables, establish device-memory mappings, and replace the identity-only physical-memory provenance adapter
+2. Add allocator zones and SMP-safe page allocator publication
 3. Add scheduler and context switching
 4. Add the storage, input, display and touchscreen driver frameworks
 5. Develop a physical-device platform port after the memory and interrupt foundations are stable

@@ -5,6 +5,7 @@
 #include "gicv3_platform.h"
 #include "gicv3_driver.h"
 #include "generic_timer.h"
+#include "page_allocator.h"
 
 extern uint8_t __kernel_start[];
 extern uint8_t __kernel_end[];
@@ -68,6 +69,34 @@ static void console_write_gicv3(const gicv3_platform_info_t *gic) {
         console_write_hex64(gic->redistributor_stride);
         console_write(" bytes\n");
     }
+}
+
+static void run_page_allocator_self_test(const memory_layout_t *layout) {
+    const int32_t init_result = fahim_page_allocator_init(
+        layout->usable, layout->usable_count);
+    if (init_result != 0) {
+        console_write("Physical Page Allocator: initialization FAILED, code=");
+        console_write_hex64((uint64_t)(int64_t)init_result);
+        console_write("\n");
+        halt_forever();
+    }
+
+    console_write("Physical Page Allocator: initialized (frame-alloc 0.1.0)\n");
+    console_write("Physical Page Allocator: base page 4096 bytes, total usable bytes ");
+    console_write_hex64(fahim_page_allocator_total_bytes());
+    console_write(", currently free ");
+    console_write_hex64(fahim_page_allocator_free_bytes());
+    console_write(" bytes\n");
+
+    const int32_t test_result = fahim_page_allocator_self_test();
+    if (test_result != 0) {
+        console_write("Physical Page Allocator self-test: FAIL, code=");
+        console_write_hex64((uint64_t)(int64_t)test_result);
+        console_write("\n");
+        halt_forever();
+    }
+
+    console_write("Physical Page Allocator self-test: PASS (4 KiB page, 4-page block, read/write, free/reuse)\n");
 }
 
 static void run_timer_irq_self_test(void) {
@@ -213,6 +242,7 @@ void kernel_main(const void *dtb) {
     }
 
     console_write("\nMilestone 3: reserved memory exclusions.\n");
+    run_page_allocator_self_test(&layout);
     run_timer_irq_self_test();
 
 #ifdef FAHIM_EXCEPTION_SELFTEST

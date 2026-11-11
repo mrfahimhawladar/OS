@@ -25,3 +25,16 @@ The upstream crate's direct dependencies are arm-sysregs (EL1 feature), bitflags
 Fahim OS consumes the upstream crate as a Cargo dependency; its source is not copied or forked into this repository. The upstream project provides MIT and Apache-2.0 license texts in its source repository. Only the small OS integration bridge is maintained here.
 
 The el1 feature enables EL1 system-register access. Default embedded-hal features are disabled because the kernel does not need those optional interfaces.
+
+
+## frame-alloc 0.1.0
+
+- Project: Paul Sandner, frame_alloc
+- Source: https://github.com/PaulSandner/frame_alloc
+- Release source branch commit: ae68fdc7ada347686859ba632c94ba1a97446190
+- Version: 0.1.0 (pinned in mobile/kernel/rust/Cargo.toml)
+- License: MIT
+- Used by: the ARM64 kernel's no_std physical-page allocator bridge
+- Scope: 4 KiB base-frame allocation, contiguous buddy blocks, boot usable-range registration and allocator statistics.
+
+Fahim OS consumes the published crate; its allocator implementation is not copied into this repository. The crate has no runtime dependencies and does not require a heap. The upstream project marks its 0.1 API as unstable. Its own kernel-demo currently targets x86-64; the ARM64 QEMU port and identity-map provenance adapter are Fahim OS integration work and are validated in the Fahim OS workflow. This integration rejects initialization when SCTLR_EL1.M is set until a page-table-aware mapping provider is implemented.
