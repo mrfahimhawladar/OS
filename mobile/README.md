@@ -1,87 +1,69 @@
 # Fahim OS Mobile
 
-**Active direction:** a smartphone operating system, not a desktop OS.
+**Project goal:** build a general-purpose smartphone operating system. Fahim OS is not a ROM made only for the POCO X6 Neo, and the core project is not tied to Xiaomi or any one phone.
 
-The first hardware target is the POCO X6 Neo 5G (India variant). This is a bring-up project: no Fahim OS mobile image has been built, boot-tested, or made flash-ready yet.
+## 1. Development strategy
 
-## 1. Architecture decision
+Develop a portable OS core first, then add hardware-specific ports separately.
 
-Fahim OS Mobile will start from an Android-compatible open-source platform (AOSP/LineageOS family) and add Fahim's own system identity, interface, services, and applications.
+The first engineering target is a **virtual ARM64 reference machine (QEMU `virt`)**. This is not a commercial smartphone emulator; it lets us implement and test the ARM64 kernel, memory, exceptions, timer, scheduler, storage and input interfaces without depending on one phone's firmware.
 
-We are not replacing the Linux kernel with a brand-new kernel at the first milestone. Reusing the Android hardware abstraction and device support is the realistic route for a phone with a MediaTek SoC, modem, camera stack, GPU, fingerprint sensor, and power-management firmware.
+After the core stabilizes, individual smartphone Board Support Packages (BSPs) can be added. A POCO X6 Neo / `gold` port is optional future work, not the definition of Fahim OS.
 
-Planned layers:
+## 2. Architecture
+
+See [the architecture overview](architecture/overview.md).
 
 | Layer | Planned technology | Responsibility |
 |---|---|---|
-| Boot and CPU-specific code | ARM64 Assembly, existing boot chain | Device boot and low-level entry |
-| Kernel | Linux, primarily C | Memory, scheduling, drivers |
-| Native services | C / C++ / Rust | System daemons and native components |
-| Android framework | Java / Kotlin | Application and system services |
-| Fahim System UI | Kotlin, framework overlays, native components where needed | Lock screen, home screen, quick settings |
-| Build and validation | Repo, Make, Soong, Python, shell | Source sync, image builds, tests |
+| CPU entry / exception / context switch | ARM64 Assembly | Architecture-specific operations |
+| Kernel | C | Memory, exceptions, scheduling, interrupt and driver core |
+| Native system services | C++ initially; Rust where useful later | Higher-level system components |
+| UI and applications | To be selected after graphics/runtime design | Lock screen, home screen, settings and apps |
+| Build and test | Cross-compiler, linker, Make/CMake, shell, Python | Reproducible builds and automated checks |
 
-This is a layered mobile OS plan. Languages will be added when a component needs them; we will not add languages just to increase the count.
+The proposed starting point is a small modular monolithic ARM64 kernel. The language list is a design choice, not a required language count.
 
-## 2. Initial target
+## 3. First development platform: QEMU ARM64
 
-See [the gold target record](targets/gold/README.md) and [machine-readable device record](targets/gold/device.json).
+See [QEMU ARM64 platform plan](platforms/qemu-aarch64/README.md) and [kernel roadmap](kernel/README.md).
 
-Current target facts:
+First boot target:
+1. AArch64 freestanding kernel entry
+2. Serial console and panic output
+3. Device Tree (FDT) parsing
+4. Detect available memory
+5. Safe halt
 
-- Device family: POCO X6 Neo 5G
-- User's model: 2312FRAFDI (India)
-- Device codename reported by the device: `gold`
-- SoC platform: MediaTek MT6833 / Dimensity 6080
-- CPU architecture: ARM64
-- User-reported installed kernel: 6.6.118-android15
-- User-reported firmware build: OS3.0.5.0.VNQINXM
-- User-reported bootloader state: locked
+Then add page allocation/MMU, interrupts/timer, scheduler, IPC, VFS, and generic input/display/storage drivers.
 
-The exact regional hardware/vendor compatibility is not yet confirmed.
+QEMU `virt` is a virtual reference board, not a full phone emulator. A QEMU boot does not prove camera, modem, GPU, fingerprint, cellular, battery, or touchscreen support on any real phone.
 
-## 3. Device support research
+## 4. Separate hardware ports
 
-A public community device tree exists at:
+See [Board Support Ports](boards/README.md).
 
-- Device tree: https://github.com/Dhterech/android_device_xiaomi_gold
-- Candidate branch: `lineage-23.2`
+A real phone needs its own boot contract, memory map, Device Tree, interrupt/power/clock configuration, and hardware drivers. These must live outside the generic kernel core.
 
-That tree declares `TARGET_ARCH := arm64`, `TARGET_BOARD_PLATFORM := mt6833`, and a 6.6 kernel target. Its README reports working Wi-Fi, mobile data/IMS, tethering, USB, fast charging, camera, fingerprint, IR, and sensors on the maintainer's test device.
+The [POCO X6 Neo `gold` research record](targets/gold/README.md) remains an optional example of future device-port research. It is not a requirement for core development.
 
-**Important limitation:** the maintainer says it was tested on the China `gold` variant and that other variants may or may not work. VoLTE, NFC, and the ultrawide camera were not tested. The branch is a research starting point, not proof that the user's India variant is safe or compatible.
+## 5. Build environment
 
-Its board configuration also forces a prebuilt kernel and prebuilt DTB/DTBO/modules for the initial build. Therefore, it is not yet a verified from-source kernel build for this phone.
+The Android phone can be used to edit files, inspect source, manage GitHub, and run lightweight scripts. It is not a suitable full build host for a large native mobile OS tree.
 
-## 4. Build-environment reality
+For the ARM64 kernel, the first build can use a suitably provisioned Linux AArch64 cross-compilation environment. A QEMU test job may run in CI once the bootable kernel exists. A full Android source build is not part of this custom-kernel plan.
 
-A full Android source build cannot be done on this Android phone or on the small x86 ISO workflow in this repository.
+## 6. Safety
 
-The current official AOSP setup requirements specify a 64-bit x86 Linux workstation, at least 400 GB free disk space (250 GB checkout plus 150 GB build space), and at least 64 GB RAM:
-https://source.android.com/docs/setup/start/requirements
+- Core OS development and virtual-machine testing come before physical-device flashing.
+- No image is to be flashed to any phone during the current phase.
+- A physical-device port must have verified hardware identity, compatible boot chain, tested images, full backups, and a recovery route.
+- Do not redistribute proprietary firmware or vendor binaries without permission.
 
-We can continue source research, write configuration, and run lightweight checks from GitHub using the phone. A real ROM build will need access to a suitably provisioned Linux build machine or cloud runner. The existing GitHub Actions job only builds the tiny x86 learning prototype; it is not an Android ROM builder.
+## 7. Current status
 
-## 5. Safety and device rules
+**Completed now:** architecture documents, ARM64 kernel roadmap, QEMU reference-platform plan, board-port policy, optional POCO research record.
 
-- Do not flash any image while the bootloader is locked.
-- Do not try to bypass Xiaomi's bootloader authorization.
-- Do not use a ROM built for a different codename or regional variant.
-- Do not overwrite or remove the stock firmware as a development shortcut.
-- Keep proprietary vendor files out of this public repository unless redistribution is explicitly permitted.
-- Do not call a build "ready" until it passes image validation, emulator/device boot tests, and a documented recovery path.
+**Not yet implemented:** ARM64 kernel source, cross-build, QEMU boot image, graphics, lock screen, home screen, or phone drivers.
 
-The user has reported that the bootloader is locked and that development is limited to an Android phone. Those constraints remain part of this plan.
-
-## 6. Work stages
-
-1. **Target identity audit** — compare the live device properties with the community tree's supported variants.
-2. **Source and firmware audit** — identify the exact device tree, kernel/prebuilt kernel, vendor components, and firmware baseline.
-3. **Product configuration** — create a Fahim OS product target without changing device-specific low-level configuration blindly.
-4. **First image build** — build in a suitable Linux environment and run static image checks.
-5. **Emulator and UI work** — bring up the system image and develop Fahim branding, lock screen, home screen, and settings.
-6. **Hardware validation** — only after bootloader authorization, backups, verified images, and a recovery plan.
-
-## Separate x86 experiment
-
-The repository's `kernel.cpp`, `boot.s`, `Makefile`, and `preview.html` are a separate 32-bit x86 learning prototype. It is not the kernel or installer for Fahim OS Mobile.
+The existing root-level x86 files and `preview.html` are a separate learning prototype. They are not Fahim OS Mobile.
