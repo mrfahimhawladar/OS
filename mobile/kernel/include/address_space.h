@@ -16,6 +16,15 @@
 
 uint32_t fahim_address_space_create(void);
 uint32_t fahim_address_space_asid(uint32_t handle);
+
+/* Activate/deactivate the current single-core TTBR0 address space. */
+int32_t fahim_address_space_activate(uint32_t handle);
+int32_t fahim_address_space_deactivate_current(void);
+
+/* EL0 SVC return trampoline bookkeeping (used by arch/arm64 entry assembly). */
+int32_t fahim_address_space_set_user_return_pc(uint64_t return_pc);
+uint64_t fahim_address_space_user_return_pc(void);
+
 int32_t fahim_address_space_map_user_page(uint32_t handle,
                                           uint64_t virtual_address,
                                           uint64_t physical_address,
