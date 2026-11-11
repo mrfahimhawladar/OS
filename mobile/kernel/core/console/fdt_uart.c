@@ -51,8 +51,7 @@ static int compatible_has_pl011(const char *list, uint32_t length) {
         while (chars < remaining && entry[chars] != '\0') ++chars;
         if (chars == remaining) return 0;
 
-        if (string_equals(entry, "arm,pl011") ||
-            string_equals(entry, "arm,primecell")) {
+        if (string_equals(entry, "arm,pl011")) {
             return 1;
         }
         offset += chars + 1;
@@ -93,7 +92,15 @@ static uintptr_t find_pl011_from_fdt(const void *dtb) {
     const uint8_t *struct_end = cursor + struct_size;
     const char *strings = (const char *)(base + strings_offset);
 
-    node_state stack[16] = {{0}};
+    node_state stack[16];
+    for (uint32_t i = 0; i < 16; ++i) {
+        stack[i].reg = NULL;
+        stack[i].reg_length = 0;
+        stack[i].compatible = NULL;
+        stack[i].compatible_length = 0;
+        stack[i].parent_address_cells = 2;
+        stack[i].child_address_cells = 2;
+    }
     uint32_t depth = 0;
     uint32_t root_address_cells = 2;
 
@@ -109,7 +116,11 @@ static uintptr_t find_pl011_from_fdt(const void *dtb) {
             ++cursor;
             cursor = (const uint8_t *)(((uintptr_t)cursor + 3u) & ~(uintptr_t)3u);
 
-            node_state node = {0};
+            node_state node;
+            node.reg = NULL;
+            node.reg_length = 0;
+            node.compatible = NULL;
+            node.compatible_length = 0;
             node.parent_address_cells =
                 depth == 0 ? root_address_cells : stack[depth - 1].child_address_cells;
             node.child_address_cells = node.parent_address_cells;
@@ -127,7 +138,7 @@ static uintptr_t find_pl011_from_fdt(const void *dtb) {
                 } else if (node->parent_address_cells == 1 && node->reg_length >= 4) {
                     address = read_be32(node->reg);
                 }
-                if (address != 0 && address <= UINTPTR_MAX) return (uintptr_t)address;
+                if (address != 0) return (uintptr_t)address;
             }
             --depth;
         } else if (token == FDT_PROP) {
