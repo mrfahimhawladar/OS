@@ -7,6 +7,8 @@ void console_putc(char character);
 
 static volatile uint32_t exception_active;
 
+static void exception_halt(void) __attribute__((noreturn));
+
 static void exception_halt(void) {
     for (;;) {
         __asm__ volatile("msr daifset, #0xf\n\twfe" ::: "memory");
