@@ -101,6 +101,9 @@ jobs:
           grep -q "Process Scheduler timer ticks:" qemu-arm64.log
           grep -q "idle waits: 0x0000000000000002 wakeups: 0x0000000000000002 user faults: 0x0000000000000001 waitpid: 0x0000000000000001 reaps: 0x0000000000000004" qemu-arm64.log
           grep -q "Process Lifecycle self-test: PASS (timer preemption, waitpid, child zombie/reap, exit status, timed sleep, idle WFI, EL0 fault isolation, address-space cleanup)" qemu-arm64.log
+          grep -q "EL0 write: ELF ready" qemu-arm64.log
+          grep -q "EL0 process 0x00000000000001f9 ran marker 0x00000000000000ee" qemu-arm64.log
+          grep -q "ELF64 loader self-test: PASS (Goblin ELF64 ET_EXEC, PT_LOAD permissions, BSS zeroing, EL0 execution, exit)" qemu-arm64.log
           grep -q "RAM region base: 0x0000000040000000 size: 0x0000000020000000 bytes" qemu-arm64.log
           grep -q "Reserved region base: 0x0000000040000000" qemu-arm64.log
           grep -q "Reserved region base: 0x0000000040200000" qemu-arm64.log
@@ -153,6 +156,9 @@ jobs:
           grep -q "Process Scheduler timer ticks:" qemu-exception.log
           grep -q "idle waits: 0x0000000000000002 wakeups: 0x0000000000000002 user faults: 0x0000000000000001 waitpid: 0x0000000000000001 reaps: 0x0000000000000004" qemu-exception.log
           grep -q "Process Lifecycle self-test: PASS (timer preemption, waitpid, child zombie/reap, exit status, timed sleep, idle WFI, EL0 fault isolation, address-space cleanup)" qemu-exception.log
+          grep -q "EL0 write: ELF ready" qemu-exception.log
+          grep -q "EL0 process 0x00000000000001f9 ran marker 0x00000000000000ee" qemu-exception.log
+          grep -q "ELF64 loader self-test: PASS (Goblin ELF64 ET_EXEC, PT_LOAD permissions, BSS zeroing, EL0 execution, exit)" qemu-exception.log
           grep -q "ARM Generic Timer IRQ test: PASS (5 interrupts, PPI 30)" qemu-exception.log
           grep -q "Triggering controlled BRK exception" qemu-exception.log
           grep -q "Exception vector: current EL SPx synchronous" qemu-exception.log

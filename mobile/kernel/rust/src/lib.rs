@@ -1,5 +1,7 @@
 #![no_std]
 
+pub mod elf_loader;
+
 use arm_gic::{
     gicv3::{
         registers::{Gicd, GicrSgi},
@@ -13,7 +15,7 @@ use arm_generic_timer::{
 };
 use frame_alloc::{AllocatorStats, PageSize, PhysRange, PhysicalAllocator, Provenance, RegionInit, SummaryBuddyAllocator};
 use aarch64_paging::{
-    descriptor::{Descriptor, El1Attributes, PhysicalAddress},
+    descriptor::{El1Attributes, PhysicalAddress},
     mair::{Mair, MairAttribute, NormalMemory},
     paging::{Constraints, El1And0, MemoryRegion, PageTable, Translation, VaRange},
     Mapping,
@@ -995,6 +997,20 @@ const USER_CODE_RO_X: El1Attributes = El1Attributes::VALID
     .union(El1Attributes::USER)
     .union(El1Attributes::PXN);
 
+const USER_DATA_RO_XN: El1Attributes = El1Attributes::VALID
+    .union(El1Attributes::ATTRIBUTE_INDEX_1)
+    .union(El1Attributes::INNER_SHAREABLE)
+    .union(El1Attributes::READ_ONLY)
+    .union(El1Attributes::ACCESSED)
+    .union(El1Attributes::NON_GLOBAL)
+    .union(El1Attributes::USER)
+    .union(El1Attributes::PXN)
+    .union(El1Attributes::UXN);
+
+const FAHIM_USER_PAGE_RW_XN: u32 = 0;
+const FAHIM_USER_PAGE_RO_X: u32 = 1;
+const FAHIM_USER_PAGE_RO_XN: u32 = 2;
+
 fn allocate_address_space_asid() -> Option<usize> {
     for asid in 2..ASID_COUNT {
         let word = &ASID_BITMAP[asid / 32];
@@ -1478,7 +1494,6 @@ pub extern "C" fn fahim_address_space_activate(handle: u32) -> i32 {
 
 /// Restore the TTBR0 value saved by the current address space's activate call.
 /// Mapping::deactivate also invalidates this address space's ASID-tagged TLB.
-#[no_mangle]
 /// Switch the current single-core TTBR0 address space.
 /// A switch always passes through the shared kernel root so every task retains
 /// the same supervisor-only identity mappings and TTBR1 high-half kernel map.
@@ -1598,8 +1613,9 @@ pub extern "C" fn fahim_address_space_map_user_page(
         return -3;
     }
     let attributes = match permissions {
-        0 => USER_DATA_RW_XN,
-        1 => USER_CODE_RO_X,
+        FAHIM_USER_PAGE_RW_XN => USER_DATA_RW_XN,
+        FAHIM_USER_PAGE_RO_X => USER_CODE_RO_X,
+        FAHIM_USER_PAGE_RO_XN => USER_DATA_RO_XN,
         _ => return -4,
     };
     let end = virtual_address + PAGE_BYTES;

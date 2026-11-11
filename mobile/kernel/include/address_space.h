@@ -14,6 +14,8 @@
  */
 #define FAHIM_USER_PAGE_RW_XN 0u
 #define FAHIM_USER_PAGE_RO_X  1u
+#define FAHIM_USER_PAGE_RO_XN 2u
+#define FAHIM_USER_PAGE_RO_XN 2u
 
 uint32_t fahim_address_space_create(void);
 uint32_t fahim_address_space_asid(uint32_t handle);

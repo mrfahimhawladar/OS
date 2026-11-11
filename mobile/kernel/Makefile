@@ -13,6 +13,7 @@ endif
 
 KERNEL := $(BUILD)/fahim-kernel.elf
 MAP := $(BUILD)/fahim-kernel.map
+USER_TEST_ELF := $(BUILD)/user-loader-test.elf
 
 CFLAGS := -std=gnu11 -O2 -Wall -Wextra -Werror \
           -ffreestanding -fno-builtin -fno-stack-protector \
@@ -46,15 +47,21 @@ $(BUILD)/%.o: %.c
 	mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(BUILD)/arch/arm64/boot/entry.o: arch/arm64/boot/entry.S
+$(USER_TEST_ELF): user/elf_loader_test.S linker/arm64-user-test.ld
 	mkdir -p $(dir $@)
-	$(CC) $(ASFLAGS) -c $< -o $@
+	$(CC) -ffreestanding -nostdlib -nostartfiles -static -fno-pic -fno-pie \
+		-mcpu=cortex-a57 -Wl,-T,linker/arm64-user-test.ld \
+		-Wl,--build-id=none -o $@ user/elf_loader_test.S
+
+$(BUILD)/arch/arm64/boot/entry.o: arch/arm64/boot/entry.S $(USER_TEST_ELF)
+	mkdir -p $(dir $@)
+	$(CC) $(ASFLAGS) -DFAHIM_USER_ELF_PATH='"$(USER_TEST_ELF)"' -c $< -o $@
 
 $(BUILD)/arch/arm64/boot/context_switch.o: arch/arm64/boot/context_switch.S
 	mkdir -p $(dir $@)
 	$(CC) $(ASFLAGS) -c $< -o $@
 
-$(RUST_LIB): Makefile rust/Cargo.toml rust/rust-toolchain.toml rust/src/lib.rs
+$(RUST_LIB): Makefile rust/Cargo.toml rust/rust-toolchain.toml rust/src/lib.rs rust/src/elf_loader.rs
 	cd rust && CARGO_TARGET_DIR=../$(RUST_TARGET_DIR) RUSTFLAGS="$(KERNEL_RUSTFLAGS)" cargo build --target $(RUST_TARGET) --release
 
 $(KERNEL): $(OBJECTS) $(RUST_LIB) linker/arm64-qemu.ld

@@ -72,6 +72,12 @@ _start:
 
 .Lel1_entry:
     msr     daifset, #0xf
+
+    /* Allow EL1 Rust/compiler FP+ASIMD use, while trapping EL0 until task FP
+     * state save/restore is implemented. CPACR_EL1.FPEN=0b01. */
+    movz    x9, #0x10, lsl #16
+    msr     cpacr_el1, x9
+    isb
     msr     spsel, #1
     ldr     x1, =__stack_top
     mov     sp, x1
@@ -483,6 +489,18 @@ __user_fault_code_start:
     wfe
     b       .Lfault_process_halt
 __user_fault_code_end:
+
+/* Embedded static user ELF64 fixture built by the AArch64 cross toolchain. */
+#ifndef FAHIM_USER_ELF_PATH
+#error "FAHIM_USER_ELF_PATH must name the generated user ELF"
+#endif
+.section .rodata.user_elf, "a"
+.balign 8
+.global __fahim_user_elf_image_start
+.global __fahim_user_elf_image_end
+__fahim_user_elf_image_start:
+    .incbin FAHIM_USER_ELF_PATH
+__fahim_user_elf_image_end:
 
 .section .bss.stack, "aw", %nobits
 .align 12

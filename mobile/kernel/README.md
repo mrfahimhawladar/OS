@@ -160,6 +160,17 @@ QEMU verifies a successful read from the user code page containing "Fahim", reje
 
 This is a checked memory-copy foundation, not a full POSIX file-descriptor implementation. SYS_WRITE currently targets the serial console and has a 256-byte service limit; C-string helpers, arbitrary-length I/O, partial-copy recovery, exception-table fixups, demand paging and a complete VFS-backed read/write interface remain future work.
 
+
+## Milestone 7G: static ELF64 executable loading and EL0 execution
+
+Fahim OS now uses the upstream Goblin ELF64 definitions (MIT, no default features, ELF64-only configuration) for a bounded no-heap parser. The loader accepts little-endian AArch64 ET_EXEC images and validates the ELF header, machine type, program-header table, entry point, file/memory bounds, page-offset/alignment rules and segment count. It maps disjoint PT_LOAD segments with permissions derived from PF_R/PF_W/PF_X: executable segments are user RO+X, writable segments are user RW+XN, and read-only data is user RO+XN. Allocated segment frames are zeroed before file bytes are copied, providing correct BSS contents. W+X, PT_INTERP, PT_DYNAMIC, PT_TLS, PIE/ET_DYN and page-rounded overlapping segments are refused.
+
+The loader currently supports at most eight PT_LOAD segments, 512 mapped pages and 4 MiB of ELF file data. It allocates physical runs through the existing page allocator, maps each page into an inactive ASID-managed user address space, synchronizes the executable cache in the QEMU integration test, and rolls back partially installed mappings on failure. Returned segment allocations remain process-owned and are released after the scheduler has destroyed the corresponding address space.
+
+QEMU builds a separate static AArch64 ELF executable with text, read-only data, initialized data and BSS segments, embeds the ELF file in the kernel image, loads it through the new parser, maps a user stack and executes its ELF entry point at EL0. The program reads and prints a string from its RO+XN segment, checks its initialized data, verifies BSS starts at zero, writes to BSS, reports PID 505 with marker 0xEE and exits. CI checks this exact output and the loader PASS marker in production and exception-test boots.
+
+This is the first executable loader, not a complete process image/runtime. Dynamic linking, relocations, ET_DYN/PIE, TLS/PT_TLS, argument/environment vectors, auxv, file-backed paging, ELF signature verification and a VFS-backed executable path remain future work.
+
 ## Reference platform and verification
 
 GitHub Actions cross-compiles and boots the kernel in QEMU virt with 512 MiB RAM and GICv3 explicitly selected. It checks the RAM/reserved/usable ranges, GICv3 initialization, five timer IRQ deliveries, and the controlled synchronous-exception test.
@@ -192,7 +203,7 @@ Exception-test image: mobile/kernel/build/arm64-qemu-exception-test/fahim-kernel
 
 1. Add runtime process creation, task-slot reuse, signals and process groups
 2. Add demand paging, fault retry and complete VFS-backed read/write semantics
-3. Add ELF64 loader/exec, per-process user stack/TLS and a stable syscall ABI
+3. Add dynamic ELF relocation, ET_DYN/PIE, PT_TLS, argv/envp/auxv and VFS-backed exec
 4. Add kernel heap, memory zones, allocator reclamation and SMP-safe page allocation/TLB shootdown
 5. Add storage, VFS, block-device and filesystem layers
 6. Add input, display, GPU, audio, touchscreen and power-management driver frameworks

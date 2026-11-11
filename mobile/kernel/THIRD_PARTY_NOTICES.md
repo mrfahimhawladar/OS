@@ -63,3 +63,15 @@ Fahim OS uses the upstream Mapping API with a custom no-heap Translation impleme
 - Scope: AArch64 callee-saved register/SP context layout, first-task stack setup, simple round-robin task selection, and register save/restore assembly.
 
 Fahim OS adapts this small context-switch/scheduler foundation to its own EL0 trap frames and ASID-managed TTBR0 address spaces. It does not import the unrelated mini-rtos drivers or task data model. The syscall table and TTBR0 integration are Fahim OS code.
+
+
+## Goblin ELF64 parser 0.10.7
+
+- Project: m4b / goblin
+- Source: https://github.com/m4b/goblin
+- Version: 0.10.7 (pinned in mobile/kernel/rust/Cargo.toml)
+- License: MIT
+- Used by: mobile/kernel/rust/src/elf_loader.rs
+- Scope: upstream ELF64 header, program-header structures and constants. Cargo defaults are disabled; only the ELF64 feature is enabled so the kernel uses the raw ELF structures without Goblin's standard-library or allocation-backed parser.
+
+Fahim OS owns the bounded no-heap ET_EXEC validation, PT_LOAD mapping, permission policy, BSS zeroing, address-space integration and rollback logic. Goblin supplies the ELF format definitions; the upstream crate source is not copied into the repository.
