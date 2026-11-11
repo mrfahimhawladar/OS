@@ -393,7 +393,8 @@ static void run_process_scheduler_self_test(void) {
     const uintptr_t shared_alias =
         (uintptr_t)0xffff000000000000ull + (uintptr_t)shared_page;
     volatile uint64_t *shared_counter = (volatile uint64_t *)shared_alias;
-    *shared_counter = 0u;
+    shared_counter[0] = 0u;
+    shared_counter[1] = 0u;
 
     const uint32_t space_parent = fahim_address_space_create();
     const uint32_t space_child = fahim_address_space_create();
@@ -489,13 +490,16 @@ static void run_process_scheduler_self_test(void) {
     const uint32_t user_faults = fahim_scheduler_user_fault_count();
     const uint32_t reaps = fahim_scheduler_reap_count();
     const uint32_t waitpid_successes = fahim_scheduler_waitpid_success_count();
-    if (scheduler_ticks == 0u || *shared_counter != 3u ||
+    if (scheduler_ticks == 0u || shared_counter[0] != 3u ||
+        shared_counter[1] != 0x2a00u ||
         idle_waits != 2u || wakeups != 2u || user_faults != 1u ||
         reaps != 4u || waitpid_successes != 1u) {
         console_write("Process Lifecycle self-test: FAIL ticks=");
         console_write_hex64(scheduler_ticks);
         console_write(" shared=");
-        console_write_hex64(*shared_counter);
+        console_write_hex64(shared_counter[0]);
+        console_write(" wait_status=");
+        console_write_hex64(shared_counter[1]);
         console_write(" idle=");
         console_write_hex64(idle_waits);
         console_write(" wakeups=");

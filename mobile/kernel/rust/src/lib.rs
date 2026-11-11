@@ -1186,6 +1186,194 @@ fn address_space_page_is_mapped(mapping: &KernelMapping, virtual_address: usize)
     result.is_ok() && mapped
 }
 
+const USER_COPY_MAX_BYTES: usize = 64 * 1024;
+
+fn address_space_user_page_physical(
+    mapping: &KernelMapping,
+    virtual_address: usize,
+    write: bool,
+) -> Option<usize> {
+    let page = virtual_address & !PAGE_MASK;
+    if !user_virtual_page_is_safe(page) {
+        return None;
+    }
+    let end = page.checked_add(PAGE_BYTES)?;
+    let range = MemoryRegion::new(page, end);
+    let mut physical = None;
+    let result = mapping.walk_range(&range, &mut |_, descriptor, level| {
+        if level == 3 && descriptor.is_valid() && descriptor.is_table_or_page() {
+            let flags = descriptor.flags();
+            if flags.contains(El1Attributes::USER)
+                && (!write || !flags.contains(El1Attributes::READ_ONLY))
+            {
+                physical = Some(descriptor.output_address().0);
+            }
+        }
+        Ok(())
+    });
+    if result.is_ok() { physical } else { None }
+}
+
+fn address_space_user_range_is_valid(
+    mapping: &KernelMapping,
+    user_address: usize,
+    length: usize,
+    write: bool,
+) -> bool {
+    if length == 0 {
+        return true;
+    }
+    if length > USER_COPY_MAX_BYTES || user_address < USER_VA_START {
+        return false;
+    }
+    let Some(end) = user_address.checked_add(length) else {
+        return false;
+    };
+    if end > USER_VA_LIMIT || end <= user_address {
+        return false;
+    }
+
+    let mut cursor = user_address;
+    while cursor < end {
+        let page = cursor & !PAGE_MASK;
+        if address_space_user_page_physical(mapping, page, write).is_none() {
+            return false;
+        }
+        let Some(next_page) = page.checked_add(PAGE_BYTES) else {
+            return false;
+        };
+        cursor = core::cmp::min(end, next_page);
+    }
+    true
+}
+
+fn address_space_copy_user_bytes(
+    mapping: &KernelMapping,
+    user_address: usize,
+    kernel_buffer: *mut u8,
+    length: usize,
+    to_user: bool,
+) -> i32 {
+    if length == 0 {
+        return 0;
+    }
+    if kernel_buffer.is_null() ||
+        !address_space_user_range_is_valid(mapping, user_address, length, to_user)
+    {
+        return -1;
+    }
+
+    let mut copied = 0usize;
+    while copied < length {
+        let current = match user_address.checked_add(copied) {
+            Some(value) => value,
+            None => return -2,
+        };
+        let page_offset = current & PAGE_MASK;
+        let chunk = core::cmp::min(PAGE_BYTES - page_offset, length - copied);
+        let Some(page_physical) =
+            address_space_user_page_physical(mapping, current, to_user)
+        else {
+            return -3;
+        };
+        let Some(physical) = page_physical.checked_add(page_offset) else {
+            return -2;
+        };
+        let Some(alias) = HIGH_HALF_DIRECT_MAP_BASE.checked_add(physical) else {
+            return -2;
+        };
+
+        // SAFETY: the page walk just verified the user mapping and its
+        // permissions. Every mapped RAM frame has a TTBR1 direct-map alias;
+        // the kernel buffer pointer is supplied by this kernel's caller.
+        unsafe {
+            if to_user {
+                core::ptr::copy_nonoverlapping(
+                    kernel_buffer.add(copied),
+                    alias as *mut u8,
+                    chunk,
+                );
+            } else {
+                core::ptr::copy_nonoverlapping(
+                    alias as *const u8,
+                    kernel_buffer.add(copied),
+                    chunk,
+                );
+            }
+        }
+        copied += chunk;
+    }
+    0
+}
+
+fn with_current_address_space<R>(
+    operation: impl FnOnce(&KernelMapping) -> R,
+) -> Result<R, i32> {
+    let handle = ACTIVE_ADDRESS_SPACE_HANDLE.load(Ordering::Acquire);
+    if handle == NO_ACTIVE_ADDRESS_SPACE {
+        return Err(-1);
+    }
+    with_address_space_mut(handle, |mapping| operation(mapping))
+}
+
+#[no_mangle]
+pub extern "C" fn fahim_address_space_validate_user_range_current(
+    user_address: u64,
+    length: usize,
+    write: u32,
+) -> i32 {
+    let Ok(user_address) = usize::try_from(user_address) else {
+        return -1;
+    };
+    match with_current_address_space(|mapping| {
+        address_space_user_range_is_valid(mapping, user_address, length, write != 0)
+    }) {
+        Ok(true) => 0,
+        Ok(false) => -2,
+        Err(error) => error,
+    }
+}
+
+/// Copy a checked EL0 buffer into a kernel-owned buffer through TTBR1 aliases.
+#[no_mangle]
+pub unsafe extern "C" fn fahim_address_space_copy_from_user_current(
+    kernel_destination: *mut u8,
+    user_source: u64,
+    length: usize,
+) -> i32 {
+    let Ok(user_source) = usize::try_from(user_source) else {
+        return -1;
+    };
+    match with_current_address_space(|mapping| {
+        address_space_copy_user_bytes(
+            mapping, user_source, kernel_destination, length, false
+        )
+    }) {
+        Ok(result) => result,
+        Err(error) => error,
+    }
+}
+
+/// Copy a kernel-owned buffer into a checked writable EL0 buffer through TTBR1 aliases.
+#[no_mangle]
+pub unsafe extern "C" fn fahim_address_space_copy_to_user_current(
+    user_destination: u64,
+    kernel_source: *const u8,
+    length: usize,
+) -> i32 {
+    let Ok(user_destination) = usize::try_from(user_destination) else {
+        return -1;
+    };
+    match with_current_address_space(|mapping| {
+        address_space_copy_user_bytes(
+            mapping, user_destination, kernel_source as *mut u8, length, true
+        )
+    }) {
+        Ok(result) => result,
+        Err(error) => error,
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn fahim_address_space_create() -> u32 {
     if !MMU_INITIALIZED.load(Ordering::Acquire) {

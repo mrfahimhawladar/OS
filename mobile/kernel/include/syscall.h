@@ -10,6 +10,7 @@
 #define FAHIM_SYS_LOG   4u
 #define FAHIM_SYS_SLEEP 5u
 #define FAHIM_SYS_WAITPID 6u
+#define FAHIM_SYS_WRITE 7u
 
 void fahim_syscall_dispatch(uint64_t *saved_registers);
 
