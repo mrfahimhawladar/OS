@@ -4,9 +4,12 @@
 
 set -u
 
+GETPROP=/system/bin/getprop
+[ -x "$GETPROP" ] || GETPROP=getprop
+
 read_prop() {
     key="$1"
-    value="$(getprop "$key" 2>/dev/null || true)"
+    value="$("$GETPROP" "$key" 2>/dev/null || true)"
     [ -n "$value" ] || value="<empty>"
     printf '%-34s %s\n' "$key" "$value"
 }
