@@ -1,6 +1,7 @@
 #ifndef FAHIM_OS_ADDRESS_SPACE_H
 #define FAHIM_OS_ADDRESS_SPACE_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 /*
