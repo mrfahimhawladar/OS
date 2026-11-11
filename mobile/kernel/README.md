@@ -129,6 +129,15 @@ The QEMU payload makes the two EL0 tasks wait for each other through a deliberat
 
 This validates a small single-core sleep/deadline scheduler and idle path. It does not yet provide wait queues, waitpid/zombie handling, task slot reuse, process reaping policies, cancellation/signals, user-fault isolation or SMP scheduling.
 
+
+## Milestone 7D: lower-EL process fault isolation
+
+The lower-EL AArch64 synchronous exception path now distinguishes the normal SVC ABI from unsupported user exceptions. A scheduled task that takes a data abort, instruction abort, undefined instruction, unsupported SVC immediate or another lower-EL synchronous exception is reported with PID, ESR, ELR and FAR, then only that task is marked dead and removed from scheduling. Other runnable or sleeping tasks continue. The dedicated one-shot SVC exit remains available only outside the multi-process scheduler; a scheduled process using that immediate exits through its own task context instead of returning into the boot trampoline.
+
+The QEMU scheduler test adds a third EL0 task. It logs a marker and deliberately attempts to write into its own user read-only executable page. The test requires the kernel to report PID 303's permission fault, kill that task, and still complete the two other processes' shared-memory rendezvous, independent sleep deadlines, wakeups, idle WFI and normal exits. CI checks exactly one user fault and the continued completion of both unaffected tasks in both QEMU boots.
+
+This is basic process-level termination for lower-EL synchronous faults, not a full POSIX signal model. Page-fault recovery, demand paging, copy-in/copy-out, syscall pointer validation, fault retry, user exception delivery and resource reaping remain future work.
+
 ## Reference platform and verification
 
 GitHub Actions cross-compiles and boots the kernel in QEMU virt with 512 MiB RAM and GICv3 explicitly selected. It checks the RAM/reserved/usable ranges, GICv3 initialization, five timer IRQ deliveries, and the controlled synchronous-exception test.
@@ -151,8 +160,8 @@ Exception-test image: mobile/kernel/build/arm64-qemu-exception-test/fahim-kernel
 
 - Physical pages are now allocated from validated, page-aligned usable RAM on the single-core QEMU target. The bridge is identity-map-only and intentionally rejects initialization once the EL1 MMU is enabled.
 - Dynamic reserved-memory allocations and page-aligned allocation are not supported.
-- The current exception diagnostics are fatal for unsupported synchronous exceptions, FIQ and SError. Lower-EL AArch64 SVC and IRQ vectors preserve per-task trap return state; user faults are not yet isolated and reaped.
-- The kernel runs through its TTBR1 high-half direct map and can schedule multiple EL0 tasks with separate ASIDs, private EL1 stacks, SVC services, timer preemption, timed sleep/wakeup and a WFI idle continuation. The lower supervisor identity mappings remain for kernel data and platform references. General user-pointer validation, user-fault recovery, demand paging, guard pages, process reaping and SMP TLB shootdown are not implemented yet.
+- The current exception diagnostics are fatal for kernel synchronous exceptions, FIQ and SError. Lower-EL AArch64 SVC and IRQ vectors preserve per-task trap return state; unsupported lower-EL synchronous exceptions terminate only the current scheduled process. User-fault recovery and cleanup of its owned resources are still incomplete.
+- The kernel runs through its TTBR1 high-half direct map and can schedule multiple EL0 tasks with separate ASIDs, private EL1 stacks, SVC services, timer preemption, timed sleep/wakeup, a WFI idle continuation and basic per-process lower-EL fault termination. The lower supervisor identity mappings remain for kernel data and platform references. General user-pointer validation, fault recovery/demand paging, guard pages, process reaping and SMP TLB shootdown are not implemented yet.
 - The upstream GICv3 driver is currently initialized for the single-core QEMU layout. The active dispatcher handles the EL1 physical timer PPI; general device IRQ registration, SPI routing, SMP and interrupt nesting remain future work.
 - The generic timer and single-core preemptive EL0 scheduler, including timed sleep/wakeup, are functional on the QEMU reference target. A full heap/process ABI, storage, input, graphics, touchscreen and phone-specific device drivers remain to be developed.
 - This is not an Android image, phone ROM, or flashable artifact. QEMU success does not prove support for a real smartphone.
@@ -160,7 +169,7 @@ Exception-test image: mobile/kernel/build/arm64-qemu-exception-test/fahim-kernel
 ## Next milestones
 
 1. Add wait queues, waitpid/child exit status, zombie states, task slot reuse and safe process/resource reaping
-2. Add EL0 fault isolation, checked copy-in/copy-out and syscall pointer validation
+2. Add checked copy-in/copy-out, syscall pointer validation, user demand paging and fault retry
 3. Add ELF64 loader/exec, process creation, per-process user stack/TLS and a stable syscall ABI
 4. Add kernel heap, memory zones, allocator reclamation and SMP-safe page allocation/TLB shootdown
 5. Add storage, VFS, block-device and filesystem layers
