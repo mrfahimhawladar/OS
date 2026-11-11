@@ -14,7 +14,7 @@ CFLAGS := -std=gnu11 -O2 -Wall -Wextra -Werror \
 ASFLAGS := $(CFLAGS)
 LDFLAGS := -T linker/arm64-qemu.ld -nostdlib
 
-SOURCES := core/main.c core/console/fdt_uart.c
+SOURCES := core/main.c core/console/fdt_uart.c core/memory/fdt_memory.c
 OBJECTS := $(patsubst %.c,$(BUILD)/%.o,$(SOURCES)) $(BUILD)/arch/arm64/boot/entry.o
 
 .PHONY: all clean inspect
