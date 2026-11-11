@@ -162,7 +162,7 @@ void user_sync_handle(uint64_t *registers) {
             console_write("EL0 process exit SVC: process ");
             write_hex64(fahim_scheduler_current_pid());
             console_write("\n");
-            fahim_scheduler_exit_current();
+            fahim_scheduler_exit_current(0u);
         }
 
         /* Legacy one-shot EL0 smoke-test exit. */

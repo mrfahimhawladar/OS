@@ -355,7 +355,7 @@ __user_process_code_start:
     svc     #0                  /* x0 = process id */
     movz    x1, #0xa
     movz    x8, #4
-    svc     #0                  /* log first marker */
+    svc     #0                  /* marker A: task is running */
 
     movz    x10, #0x60, lsl #16
     movk    x10, #0x1, lsl #32  /* shared word at 0x100600000 */
@@ -363,38 +363,65 @@ __user_process_code_start:
     add     x5, x5, #1
     str     x5, [x10]
 
-.Lwait_for_peer:
+.Lwait_for_peers:
     ldr     x5, [x10]
-    cmp     x5, #2
-    b.lo    .Lwait_for_peer     /* force timer-driven task preemption */
+    cmp     x5, #3
+    b.lo    .Lwait_for_peers    /* timer preemption must run all three normal tasks */
 
-    /* Record entry to sleep, then use different deadlines per process. */
     movz    x8, #3
-    svc     #0
+    svc     #0                  /* x0 = process id */
+    cmp     x0, #101
+    b.eq    .Lparent_wait
+    cmp     x0, #202
+    b.eq    .Lchild_sleep
+
+    /* PID 404: independent root task with a 50 ms sleep deadline. */
     movz    x1, #0xc
     movz    x8, #4
     svc     #0                  /* marker C: entering sleep */
-
-    movz    x8, #3
-    svc     #0                  /* x0 = pid */
-    cmp     x0, #101
-    b.eq    .Lsleep_30ms
     movz    x0, #50
-    b       .Lsleep_now
-.Lsleep_30ms:
-    movz    x0, #30
-.Lsleep_now:
     movz    x8, #5
-    svc     #0                  /* SYS_SLEEP milliseconds */
-
+    svc     #0                  /* SYS_SLEEP(50) */
     movz    x8, #3
     svc     #0
     movz    x1, #0xb
     movz    x8, #4
     svc     #0                  /* marker B: resumed after wakeup */
+    movz    x0, #0x44
+    movz    x8, #1
+    svc     #0                  /* exit 68 */
+
+.Lchild_sleep:
+    movz    x1, #0xc
+    movz    x8, #4
+    svc     #0                  /* marker C: entering sleep */
+    movz    x0, #30
+    movz    x8, #5
+    svc     #0                  /* SYS_SLEEP(30) */
+    movz    x0, #42
+    movz    x8, #1
+    svc     #0                  /* child exits with status 42 */
+
+.Lparent_wait:
+    movz    x0, #202
+    movz    x8, #6
+    svc     #0                  /* SYS_WAITPID(child=202); x0=pid, x1=status */
+    cmp     x0, #202
+    b.ne    .Lwaitpid_failed
+    cmp     x1, #42
+    b.ne    .Lwaitpid_failed
+    movz    x8, #3
+    svc     #0
+    movz    x1, #0xd
+    movz    x8, #4
+    svc     #0                  /* marker D: child reaped with status 42 */
     movz    x0, #0
     movz    x8, #1
-    svc     #0                  /* exit */
+    svc     #0                  /* parent exits */
+
+.Lwaitpid_failed:
+    wfe
+    b       .Lwaitpid_failed
 .Luser_process_halt:
     wfe
     b       .Luser_process_halt

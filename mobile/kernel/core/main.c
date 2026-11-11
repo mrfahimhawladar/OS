@@ -362,16 +362,18 @@ static void run_process_scheduler_self_test(void) {
     const uint64_t fault_code_page = fahim_page_allocator_alloc(1u);
     const uint64_t stack_page_a = fahim_page_allocator_alloc(1u);
     const uint64_t stack_page_b = fahim_page_allocator_alloc(1u);
+    const uint64_t stack_page_sleep = fahim_page_allocator_alloc(1u);
     const uint64_t fault_stack_page = fahim_page_allocator_alloc(1u);
     const uint64_t shared_page = fahim_page_allocator_alloc(1u);
     if (code_page == UINT64_MAX || fault_code_page == UINT64_MAX ||
         stack_page_a == UINT64_MAX || stack_page_b == UINT64_MAX ||
-        fault_stack_page == UINT64_MAX || shared_page == UINT64_MAX) {
+        stack_page_sleep == UINT64_MAX || fault_stack_page == UINT64_MAX ||
+        shared_page == UINT64_MAX) {
         console_write("Process Scheduler self-test: FAIL (physical frame allocation)\n");
         halt_forever();
     }
 
-    /* Copy user code into TTBR1 direct-map aliases; both code mappings are RO+X. */
+    /* Normal EL0 tasks share one RO+X image; the fault task has its own. */
     const uintptr_t code_alias =
         (uintptr_t)0xffff000000000000ull + (uintptr_t)code_page;
     const uintptr_t fault_code_alias =
@@ -393,11 +395,12 @@ static void run_process_scheduler_self_test(void) {
     volatile uint64_t *shared_counter = (volatile uint64_t *)shared_alias;
     *shared_counter = 0u;
 
-    const uint32_t space_a = fahim_address_space_create();
-    const uint32_t space_b = fahim_address_space_create();
+    const uint32_t space_parent = fahim_address_space_create();
+    const uint32_t space_child = fahim_address_space_create();
+    const uint32_t space_sleep = fahim_address_space_create();
     const uint32_t fault_space = fahim_address_space_create();
-    if (space_a == UINT32_MAX || space_b == UINT32_MAX ||
-        fault_space == UINT32_MAX) {
+    if (space_parent == UINT32_MAX || space_child == UINT32_MAX ||
+        space_sleep == UINT32_MAX || fault_space == UINT32_MAX) {
         console_write("Process Scheduler self-test: FAIL (address-space creation)\n");
         halt_forever();
     }
@@ -406,17 +409,23 @@ static void run_process_scheduler_self_test(void) {
     const uint64_t user_stack_va = 0x0000000100400000ull;
     const uint64_t shared_user_va = 0x0000000100600000ull;
     if (fahim_address_space_map_user_page(
-            space_a, user_code_va, code_page, FAHIM_USER_PAGE_RO_X) != 0 ||
+            space_parent, user_code_va, code_page, FAHIM_USER_PAGE_RO_X) != 0 ||
         fahim_address_space_map_user_page(
-            space_a, user_stack_va, stack_page_a, FAHIM_USER_PAGE_RW_XN) != 0 ||
+            space_parent, user_stack_va, stack_page_a, FAHIM_USER_PAGE_RW_XN) != 0 ||
         fahim_address_space_map_user_page(
-            space_a, shared_user_va, shared_page, FAHIM_USER_PAGE_RW_XN) != 0 ||
+            space_parent, shared_user_va, shared_page, FAHIM_USER_PAGE_RW_XN) != 0 ||
         fahim_address_space_map_user_page(
-            space_b, user_code_va, code_page, FAHIM_USER_PAGE_RO_X) != 0 ||
+            space_child, user_code_va, code_page, FAHIM_USER_PAGE_RO_X) != 0 ||
         fahim_address_space_map_user_page(
-            space_b, user_stack_va, stack_page_b, FAHIM_USER_PAGE_RW_XN) != 0 ||
+            space_child, user_stack_va, stack_page_b, FAHIM_USER_PAGE_RW_XN) != 0 ||
         fahim_address_space_map_user_page(
-            space_b, shared_user_va, shared_page, FAHIM_USER_PAGE_RW_XN) != 0 ||
+            space_child, shared_user_va, shared_page, FAHIM_USER_PAGE_RW_XN) != 0 ||
+        fahim_address_space_map_user_page(
+            space_sleep, user_code_va, code_page, FAHIM_USER_PAGE_RO_X) != 0 ||
+        fahim_address_space_map_user_page(
+            space_sleep, user_stack_va, stack_page_sleep, FAHIM_USER_PAGE_RW_XN) != 0 ||
+        fahim_address_space_map_user_page(
+            space_sleep, shared_user_va, shared_page, FAHIM_USER_PAGE_RW_XN) != 0 ||
         fahim_address_space_map_user_page(
             fault_space, user_code_va, fault_code_page, FAHIM_USER_PAGE_RO_X) != 0 ||
         fahim_address_space_map_user_page(
@@ -425,35 +434,38 @@ static void run_process_scheduler_self_test(void) {
         halt_forever();
     }
 
-    /* Invalidate each instruction-cache alias through its mapped user VA. */
-    if (fahim_address_space_activate(space_a) != 0) {
-        console_write("Process Scheduler self-test: FAIL (normal cache-maintenance address space)\n");
+    /* Invalidate each executable page through its mapped user VA. */
+    if (fahim_address_space_activate(space_parent) != 0) {
+        console_write("Process Scheduler self-test: FAIL (normal cache-maintenance activation)\n");
         halt_forever();
     }
     synchronize_user_code_cache(code_alias, (uintptr_t)user_code_va, code_size);
     if (fahim_address_space_deactivate_current() != 0) {
-        console_write("Process Scheduler self-test: FAIL (normal cache-maintenance TTBR0 restore)\n");
+        console_write("Process Scheduler self-test: FAIL (normal cache-maintenance restore)\n");
         halt_forever();
     }
 
     if (fahim_address_space_activate(fault_space) != 0) {
-        console_write("Process Scheduler self-test: FAIL (fault cache-maintenance address space)\n");
+        console_write("Process Scheduler self-test: FAIL (fault cache-maintenance activation)\n");
         halt_forever();
     }
     synchronize_user_code_cache(
         fault_code_alias, (uintptr_t)user_code_va, fault_code_size);
     if (fahim_address_space_deactivate_current() != 0) {
-        console_write("Process Scheduler self-test: FAIL (fault cache-maintenance TTBR0 restore)\n");
+        console_write("Process Scheduler self-test: FAIL (fault cache-maintenance restore)\n");
         halt_forever();
     }
 
     if (fahim_scheduler_create_user(
-            space_a, user_code_va, user_stack_va + 4096u, 101u) < 0 ||
+            space_parent, user_code_va, user_stack_va + 4096u, 101u) < 0 ||
         fahim_scheduler_create_user(
-            space_b, user_code_va, user_stack_va + 4096u, 202u) < 0 ||
+            space_child, user_code_va, user_stack_va + 4096u, 202u) < 0 ||
         fahim_scheduler_create_user(
-            fault_space, user_code_va, user_stack_va + 4096u, 303u) < 0) {
-        console_write("Process Scheduler self-test: FAIL (task creation)\n");
+            space_sleep, user_code_va, user_stack_va + 4096u, 404u) < 0 ||
+        fahim_scheduler_create_user(
+            fault_space, user_code_va, user_stack_va + 4096u, 303u) < 0 ||
+        fahim_scheduler_set_parent(202u, 101u) != 0) {
+        console_write("Process Scheduler self-test: FAIL (task/parent creation)\n");
         halt_forever();
     }
 
@@ -465,7 +477,7 @@ static void run_process_scheduler_self_test(void) {
         halt_forever();
     }
 
-    console_write("Process Scheduler: starting two EL0 tasks and one fault-isolation task\n");
+    console_write("Process Scheduler: starting parent, child, sleeper and fault-isolation tasks\n");
     fahim_scheduler_start();
 
     __asm__ volatile("msr daifset, #2\n\tisb" ::: "memory");
@@ -475,9 +487,12 @@ static void run_process_scheduler_self_test(void) {
     const uint32_t idle_waits = fahim_scheduler_idle_wait_count();
     const uint32_t wakeups = fahim_scheduler_wakeup_count();
     const uint32_t user_faults = fahim_scheduler_user_fault_count();
-    if (scheduler_ticks == 0u || *shared_counter != 2u ||
-        idle_waits == 0u || wakeups != 2u || user_faults != 1u) {
-        console_write("Process Scheduler self-test: FAIL ticks=");
+    const uint32_t reaps = fahim_scheduler_reap_count();
+    const uint32_t waitpid_successes = fahim_scheduler_waitpid_success_count();
+    if (scheduler_ticks == 0u || *shared_counter != 3u ||
+        idle_waits != 2u || wakeups != 2u || user_faults != 1u ||
+        reaps != 4u || waitpid_successes != 1u) {
+        console_write("Process Lifecycle self-test: FAIL ticks=");
         console_write_hex64(scheduler_ticks);
         console_write(" shared=");
         console_write_hex64(*shared_counter);
@@ -487,6 +502,10 @@ static void run_process_scheduler_self_test(void) {
         console_write_hex64(wakeups);
         console_write(" faults=");
         console_write_hex64(user_faults);
+        console_write(" waitpid=");
+        console_write_hex64(waitpid_successes);
+        console_write(" reaps=");
+        console_write_hex64(reaps);
         console_write("\n");
         halt_forever();
     }
@@ -499,28 +518,30 @@ static void run_process_scheduler_self_test(void) {
     console_write_hex64(wakeups);
     console_write(" user faults: ");
     console_write_hex64(user_faults);
+    console_write(" waitpid: ");
+    console_write_hex64(waitpid_successes);
+    console_write(" reaps: ");
+    console_write_hex64(reaps);
     console_write("\n");
 
     if (fahim_scheduler_is_active()) {
-        console_write("Process Scheduler self-test: FAIL (scheduler did not return)\n");
+        console_write("Process Lifecycle self-test: FAIL (scheduler did not return)\n");
         halt_forever();
     }
 
     fahim_scheduler_reset();
-    if (fahim_address_space_destroy(space_a) != 0 ||
-        fahim_address_space_destroy(space_b) != 0 ||
-        fahim_address_space_destroy(fault_space) != 0 ||
-        fahim_page_allocator_free(code_page, 1u) != 0 ||
+    if (fahim_page_allocator_free(code_page, 1u) != 0 ||
         fahim_page_allocator_free(fault_code_page, 1u) != 0 ||
         fahim_page_allocator_free(stack_page_a, 1u) != 0 ||
         fahim_page_allocator_free(stack_page_b, 1u) != 0 ||
+        fahim_page_allocator_free(stack_page_sleep, 1u) != 0 ||
         fahim_page_allocator_free(fault_stack_page, 1u) != 0 ||
         fahim_page_allocator_free(shared_page, 1u) != 0) {
-        console_write("Process Scheduler self-test: FAIL (cleanup)\n");
+        console_write("Process Lifecycle self-test: FAIL (physical frame cleanup)\n");
         halt_forever();
     }
 
-    console_write("Process Scheduler self-test: PASS (timer preemption, sleep/wakeup, idle WFI, EL0 fault isolation, TTBR0 switching, syscalls, exit)\n");
+    console_write("Process Lifecycle self-test: PASS (timer preemption, waitpid, child zombie/reap, exit status, timed sleep, idle WFI, EL0 fault isolation, address-space cleanup)\n");
 }
 
 static void run_timer_irq_self_test(void) {
