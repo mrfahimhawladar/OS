@@ -15,7 +15,7 @@ use frame_alloc::{AllocatorStats, PageSize, PhysRange, PhysicalAllocator, Proven
 use aarch64_paging::{
     descriptor::{El1Attributes, PhysicalAddress},
     mair::{Mair, MairAttribute, NormalMemory},
-    paging::{Constraints, El1And0, MemoryRegion, PageTable, Translation},
+    paging::{Constraints, El1And0, MemoryRegion, PageTable, Translation, VaRange},
     Mapping,
 };
 use core::cell::UnsafeCell;
@@ -668,7 +668,7 @@ pub extern "C" fn fahim_mmu_init(
         || !range_is_inside_ram(ram, rodata_start, rodata_end)
     { return -5; }
 
-    let mut mapping = Mapping::new(KernelTranslation::new(), 0, El1And0::with_asid(1));
+    let mut mapping = Mapping::with_asid_and_va_range(KernelTranslation::new(), 1, 0, El1And0, VaRange::Lower);
 
     // RAM is cacheable Normal memory, privileged RW and execute-never by default.
     for region in ram {
