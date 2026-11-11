@@ -7,6 +7,7 @@
 #include "generic_timer.h"
 #include "page_allocator.h"
 #include "mmu.h"
+#include "address_space.h"
 #include "console.h"
 
 extern uint8_t __kernel_start[];
@@ -173,6 +174,15 @@ static void run_mmu_self_test(const memory_layout_t *layout,
         halt_forever();
     }
     console_write("MMU high-half direct-map self-test: PASS (TTBR1 alias read/write)\n");
+
+    const int32_t address_space_result = fahim_address_space_self_test();
+    if (address_space_result != 0) {
+        console_write("User Address Space self-test: FAIL, code=");
+        console_write_hex64((uint64_t)(int64_t)address_space_result);
+        console_write("\n");
+        halt_forever();
+    }
+    console_write("User Address Space self-test: PASS (two ASIDs, EL0 permissions, isolation, unmap/remap, destroy)\n");
 }
 
 static void run_timer_irq_self_test(void) {
