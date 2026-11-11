@@ -26,6 +26,17 @@ int32_t fahim_address_space_switch(uint32_t next_handle);
 int32_t fahim_address_space_set_user_return_pc(uint64_t return_pc);
 uint64_t fahim_address_space_user_return_pc(void);
 
+/* Checked EL0 memory access through the current process's TTBR1 physical alias. */
+int32_t fahim_address_space_validate_user_range_current(uint64_t user_address,
+                                                        size_t length,
+                                                        uint32_t write);
+int32_t fahim_address_space_copy_from_user_current(void *kernel_destination,
+                                                    uint64_t user_source,
+                                                    size_t length);
+int32_t fahim_address_space_copy_to_user_current(uint64_t user_destination,
+                                                  const void *kernel_source,
+                                                  size_t length);
+
 int32_t fahim_address_space_map_user_page(uint32_t handle,
                                           uint64_t virtual_address,
                                           uint64_t physical_address,
