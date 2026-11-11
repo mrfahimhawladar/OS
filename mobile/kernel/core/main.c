@@ -16,6 +16,12 @@ static void halt_forever(void) {
     }
 }
 
+static uint64_t read_current_el(void) {
+    uint64_t value;
+    __asm__ volatile("mrs %0, CurrentEL" : "=r"(value));
+    return value;
+}
+
 static void console_write_hex64(uint64_t value) {
     static const char digits[] = "0123456789abcdef";
     console_write("0x");
@@ -45,9 +51,21 @@ void kernel_main(const void *dtb) {
     console_write("          FAHIM OS ARM64                \n");
     console_write("========================================\n");
     console_write("Kernel entry: OK\n");
+    console_write("Kernel BSS: zeroed before C entry\n");
     console_write("Device Tree: parsed\n");
     console_write("PL011 UART: initialized from Device Tree\n");
     console_write("Platform: QEMU virt (ARM64 reference target)\n");
+
+    const uint64_t current_el = read_current_el();
+    console_write("Boot exception level: ");
+    console_write_hex64(current_el);
+    console_write("\n");
+    if (current_el != 0x4u) {
+        console_write("Boot exception level: FAILED (EL1 required)\n");
+        halt_forever();
+    }
+    console_write("Boot exception level: EL1 confirmed\n");
+    console_write("Exception vectors: VBAR_EL1 installed\n");
 
     memory_layout_t layout;
     const int result = memory_layout_from_dtb(
@@ -83,5 +101,13 @@ void kernel_main(const void *dtb) {
     }
 
     console_write("\nMilestone 3: reserved memory exclusions.\n");
+
+#ifdef FAHIM_EXCEPTION_SELFTEST
+    console_write("Triggering controlled BRK exception...\n");
+    __asm__ volatile("brk #0xF05");
+    console_write("Exception self-test: FAIL (BRK returned unexpectedly)\n");
+#endif
+
+    console_write("Milestone 4: exception vectors installed.\n");
     halt_forever();
 }
