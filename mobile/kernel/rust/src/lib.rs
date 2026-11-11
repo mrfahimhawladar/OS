@@ -907,6 +907,7 @@ struct AddressSpaceSlot {
     state: AtomicU32,
     generation: AtomicU32,
     asid: AtomicUsize,
+    previous_ttbr: AtomicUsize,
     mapping: UnsafeCell<MaybeUninit<KernelMapping>>,
 }
 
@@ -916,6 +917,7 @@ impl AddressSpaceSlot {
             state: AtomicU32::new(ADDRESS_SPACE_FREE),
             generation: AtomicU32::new(0),
             asid: AtomicUsize::new(0),
+            previous_ttbr: AtomicUsize::new(0),
             mapping: UnsafeCell::new(MaybeUninit::uninit()),
         }
     }
@@ -927,6 +929,12 @@ unsafe impl Sync for AddressSpaceSlot {}
 
 static ADDRESS_SPACES: [AddressSpaceSlot; ADDRESS_SPACE_CAPACITY] =
     [const { AddressSpaceSlot::new() }; ADDRESS_SPACE_CAPACITY];
+
+const NO_ACTIVE_ADDRESS_SPACE: u32 = u32::MAX;
+static ACTIVE_ADDRESS_SPACE_HANDLE: AtomicU32 =
+    AtomicU32::new(NO_ACTIVE_ADDRESS_SPACE);
+static USER_RETURN_PC: AtomicUsize = AtomicUsize::new(0);
+
 
 // ASID 0 is reserved; ASID 1 belongs to the boot/kernel mapping.
 static ASID_BITMAP: [AtomicU32; ASID_BITMAP_WORDS] = [
@@ -1200,6 +1208,7 @@ pub extern "C" fn fahim_address_space_create() -> u32 {
         }
         slot.generation.store(generation, Ordering::Relaxed);
         slot.asid.store(asid, Ordering::Relaxed);
+        slot.previous_ttbr.store(0, Ordering::Relaxed);
         // SAFETY: BUILDING reserves the slot and the previous mapping was dropped.
         unsafe { (*slot.mapping.get()).write(mapping); }
         slot.state.store(ADDRESS_SPACE_READY, Ordering::Release);
@@ -1220,6 +1229,115 @@ pub extern "C" fn fahim_address_space_asid(handle: u32) -> u32 {
         return u32::MAX;
     }
     slot.asid.load(Ordering::Acquire) as u32
+}
+
+/// Activate one prepared lower-VA TTBR0 address space on the current CPU.
+/// The caller must keep local interrupts masked while changing address spaces.
+#[no_mangle]
+pub extern "C" fn fahim_address_space_activate(handle: u32) -> i32 {
+    if !MMU_INITIALIZED.load(Ordering::Acquire) {
+        return -1;
+    }
+    if ACTIVE_ADDRESS_SPACE_HANDLE.load(Ordering::Acquire) != NO_ACTIVE_ADDRESS_SPACE {
+        return -2;
+    }
+    let Some((index, generation)) = decode_address_space_handle(handle) else {
+        return -3;
+    };
+    let slot = &ADDRESS_SPACES[index];
+    if slot.generation.load(Ordering::Acquire) != generation {
+        return -3;
+    }
+    if slot.state.compare_exchange(
+        ADDRESS_SPACE_READY,
+        ADDRESS_SPACE_BUSY,
+        Ordering::AcqRel,
+        Ordering::Acquire,
+    ).is_err() {
+        return -4;
+    }
+
+    // SAFETY: BUSY grants exclusive access and the mapping is inactive.
+    let mapping = unsafe { (&*slot.mapping.get()).assume_init_ref() };
+    if mapping.active() {
+        slot.state.store(ADDRESS_SPACE_READY, Ordering::Release);
+        return -5;
+    }
+
+    // SAFETY: this mapping contains the same supervisor-only kernel identity
+    // map and shared TTBR1 kernel mapping, so the currently executing kernel
+    // PC, stack, exception vectors and data remain mapped across activation.
+    let previous_ttbr = unsafe { mapping.activate() };
+    slot.previous_ttbr.store(previous_ttbr, Ordering::Relaxed);
+    ACTIVE_ADDRESS_SPACE_HANDLE.store(handle, Ordering::Release);
+    slot.state.store(ADDRESS_SPACE_READY, Ordering::Release);
+    0
+}
+
+/// Restore the TTBR0 value saved by the current address space's activate call.
+/// Mapping::deactivate also invalidates this address space's ASID-tagged TLB.
+#[no_mangle]
+pub extern "C" fn fahim_address_space_deactivate_current() -> i32 {
+    let handle = ACTIVE_ADDRESS_SPACE_HANDLE.load(Ordering::Acquire);
+    if handle == NO_ACTIVE_ADDRESS_SPACE {
+        return -1;
+    }
+    let Some((index, generation)) = decode_address_space_handle(handle) else {
+        return -2;
+    };
+    let slot = &ADDRESS_SPACES[index];
+    if slot.generation.load(Ordering::Acquire) != generation {
+        return -2;
+    }
+    if slot.state.compare_exchange(
+        ADDRESS_SPACE_READY,
+        ADDRESS_SPACE_BUSY,
+        Ordering::AcqRel,
+        Ordering::Acquire,
+    ).is_err() {
+        return -3;
+    }
+
+    // SAFETY: BUSY grants exclusive access to the currently active mapping.
+    let mapping = unsafe { (&*slot.mapping.get()).assume_init_ref() };
+    if !mapping.active() {
+        slot.state.store(ADDRESS_SPACE_READY, Ordering::Release);
+        return -4;
+    }
+    let previous_ttbr = slot.previous_ttbr.swap(0, Ordering::AcqRel);
+    if previous_ttbr == 0 {
+        slot.state.store(ADDRESS_SPACE_READY, Ordering::Release);
+        return -5;
+    }
+
+    // SAFETY: previous_ttbr was returned by this mapping's activate call.
+    // It points at the still-live kernel TTBR0 root which retains the current
+    // kernel's lower identity map. The high-half kernel continues via TTBR1.
+    unsafe { mapping.deactivate(previous_ttbr); }
+    ACTIVE_ADDRESS_SPACE_HANDLE.store(NO_ACTIVE_ADDRESS_SPACE, Ordering::Release);
+    USER_RETURN_PC.store(0, Ordering::Release);
+    slot.state.store(ADDRESS_SPACE_READY, Ordering::Release);
+    0
+}
+
+/// Set the EL1 resume PC used by the one-shot user-mode entry trampoline.
+#[no_mangle]
+pub extern "C" fn fahim_address_space_set_user_return_pc(return_pc: u64) -> i32 {
+    let Ok(return_pc) = usize::try_from(return_pc) else {
+        return -1;
+    };
+    if ACTIVE_ADDRESS_SPACE_HANDLE.load(Ordering::Acquire) == NO_ACTIVE_ADDRESS_SPACE
+        || return_pc < HIGH_HALF_DIRECT_MAP_BASE
+    {
+        return -2;
+    }
+    USER_RETURN_PC.store(return_pc, Ordering::Release);
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn fahim_address_space_user_return_pc() -> u64 {
+    USER_RETURN_PC.load(Ordering::Acquire) as u64
 }
 
 /// Map one caller-owned, allocated physical page into a process EL0 range.
