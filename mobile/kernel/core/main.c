@@ -9,7 +9,6 @@
 #include "mmu.h"
 #include "address_space.h"
 #include "scheduler.h"
-#include "scheduler.h"
 #include "console.h"
 
 extern uint8_t __kernel_start[];
@@ -23,8 +22,8 @@ extern const uint32_t __user_smoke_code_start[];
 extern const uint32_t __user_smoke_code_end[];
 extern const uint32_t __user_process_code_start[];
 extern const uint32_t __user_process_code_end[];
-extern const uint32_t __user_process_code_start[];
-extern const uint32_t __user_process_code_end[];
+extern const uint32_t __user_fault_code_start[];
+extern const uint32_t __user_fault_code_end[];
 extern uint64_t fahim_enter_user(uint64_t user_entry, uint64_t user_stack_top);
 
 int console_init_from_fdt(const void *dtb);
@@ -350,29 +349,45 @@ static void run_user_mode_self_test(void) {
 static void run_process_scheduler_self_test(void) {
     const size_t code_size =
         (uintptr_t)__user_process_code_end - (uintptr_t)__user_process_code_start;
-    if (code_size == 0u || code_size > 4096u || (code_size & 3u) != 0u) {
+    const size_t fault_code_size =
+        (uintptr_t)__user_fault_code_end - (uintptr_t)__user_fault_code_start;
+    if (code_size == 0u || code_size > 4096u || (code_size & 3u) != 0u ||
+        fault_code_size == 0u || fault_code_size > 4096u ||
+        (fault_code_size & 3u) != 0u) {
         console_write("Process Scheduler self-test: FAIL (user payload size)\n");
         halt_forever();
     }
 
     const uint64_t code_page = fahim_page_allocator_alloc(1u);
+    const uint64_t fault_code_page = fahim_page_allocator_alloc(1u);
     const uint64_t stack_page_a = fahim_page_allocator_alloc(1u);
     const uint64_t stack_page_b = fahim_page_allocator_alloc(1u);
+    const uint64_t fault_stack_page = fahim_page_allocator_alloc(1u);
     const uint64_t shared_page = fahim_page_allocator_alloc(1u);
-    if (code_page == UINT64_MAX || stack_page_a == UINT64_MAX ||
-        stack_page_b == UINT64_MAX || shared_page == UINT64_MAX) {
+    if (code_page == UINT64_MAX || fault_code_page == UINT64_MAX ||
+        stack_page_a == UINT64_MAX || stack_page_b == UINT64_MAX ||
+        fault_stack_page == UINT64_MAX || shared_page == UINT64_MAX) {
         console_write("Process Scheduler self-test: FAIL (physical frame allocation)\n");
         halt_forever();
     }
 
-    /* Copy into the TTBR1 direct-map alias; keep user code shared RO+X. */
+    /* Copy user code into TTBR1 direct-map aliases; both code mappings are RO+X. */
     const uintptr_t code_alias =
         (uintptr_t)0xffff000000000000ull + (uintptr_t)code_page;
+    const uintptr_t fault_code_alias =
+        (uintptr_t)0xffff000000000000ull + (uintptr_t)fault_code_page;
     volatile uint32_t *destination = (volatile uint32_t *)code_alias;
+    volatile uint32_t *fault_destination =
+        (volatile uint32_t *)fault_code_alias;
     const uint32_t *source = __user_process_code_start;
-    for (size_t index = 0; index < code_size / sizeof(uint32_t); ++index) {
+    const uint32_t *fault_source = __user_fault_code_start;
+    for (size_t index = 0u; index < code_size / sizeof(uint32_t); ++index) {
         destination[index] = source[index];
     }
+    for (size_t index = 0u; index < fault_code_size / sizeof(uint32_t); ++index) {
+        fault_destination[index] = fault_source[index];
+    }
+
     const uintptr_t shared_alias =
         (uintptr_t)0xffff000000000000ull + (uintptr_t)shared_page;
     volatile uint64_t *shared_counter = (volatile uint64_t *)shared_alias;
@@ -380,7 +395,9 @@ static void run_process_scheduler_self_test(void) {
 
     const uint32_t space_a = fahim_address_space_create();
     const uint32_t space_b = fahim_address_space_create();
-    if (space_a == UINT32_MAX || space_b == UINT32_MAX) {
+    const uint32_t fault_space = fahim_address_space_create();
+    if (space_a == UINT32_MAX || space_b == UINT32_MAX ||
+        fault_space == UINT32_MAX) {
         console_write("Process Scheduler self-test: FAIL (address-space creation)\n");
         halt_forever();
     }
@@ -399,54 +416,68 @@ static void run_process_scheduler_self_test(void) {
         fahim_address_space_map_user_page(
             space_b, user_stack_va, stack_page_b, FAHIM_USER_PAGE_RW_XN) != 0 ||
         fahim_address_space_map_user_page(
-            space_b, shared_user_va, shared_page, FAHIM_USER_PAGE_RW_XN) != 0) {
+            space_b, shared_user_va, shared_page, FAHIM_USER_PAGE_RW_XN) != 0 ||
+        fahim_address_space_map_user_page(
+            fault_space, user_code_va, fault_code_page, FAHIM_USER_PAGE_RO_X) != 0 ||
+        fahim_address_space_map_user_page(
+            fault_space, user_stack_va, fault_stack_page, FAHIM_USER_PAGE_RW_XN) != 0) {
         console_write("Process Scheduler self-test: FAIL (user mapping)\n");
         halt_forever();
     }
 
-    /* Invalidate the instruction-cache alias through a mapped user VA. */
+    /* Invalidate each instruction-cache alias through its mapped user VA. */
     if (fahim_address_space_activate(space_a) != 0) {
-        console_write("Process Scheduler self-test: FAIL (cache-maintenance address space)\n");
+        console_write("Process Scheduler self-test: FAIL (normal cache-maintenance address space)\n");
         halt_forever();
     }
     synchronize_user_code_cache(code_alias, (uintptr_t)user_code_va, code_size);
     if (fahim_address_space_deactivate_current() != 0) {
-        console_write("Process Scheduler self-test: FAIL (cache-maintenance TTBR0 restore)\n");
+        console_write("Process Scheduler self-test: FAIL (normal cache-maintenance TTBR0 restore)\n");
+        halt_forever();
+    }
+
+    if (fahim_address_space_activate(fault_space) != 0) {
+        console_write("Process Scheduler self-test: FAIL (fault cache-maintenance address space)\n");
+        halt_forever();
+    }
+    synchronize_user_code_cache(
+        fault_code_alias, (uintptr_t)user_code_va, fault_code_size);
+    if (fahim_address_space_deactivate_current() != 0) {
+        console_write("Process Scheduler self-test: FAIL (fault cache-maintenance TTBR0 restore)\n");
         halt_forever();
     }
 
     if (fahim_scheduler_create_user(
             space_a, user_code_va, user_stack_va + 4096u, 101u) < 0 ||
         fahim_scheduler_create_user(
-            space_b, user_code_va, user_stack_va + 4096u, 202u) < 0) {
+            space_b, user_code_va, user_stack_va + 4096u, 202u) < 0 ||
+        fahim_scheduler_create_user(
+            fault_space, user_code_va, user_stack_va + 4096u, 303u) < 0) {
         console_write("Process Scheduler self-test: FAIL (task creation)\n");
         halt_forever();
     }
 
-    /* Re-arm the same upstream Generic Timer used by the IRQ self-test.
-     * The five-IRQ diagnostic limit is raised for continuous scheduler ticks. */
-    const int32_t timer_result = fahim_generic_timer_init(FAHIM_SCHEDULER_TICK_MS);
+    const int32_t timer_result =
+        fahim_generic_timer_init(FAHIM_SCHEDULER_TICK_MS);
     if (timer_result != 0 ||
         fahim_generic_timer_set_irq_limit(UINT32_MAX) != 0) {
         console_write("Process Scheduler self-test: FAIL (periodic timer setup)\n");
         halt_forever();
     }
 
-    console_write("Process Scheduler: starting two EL0 tasks with timer preemption\n");
-    /* ERET in each task's first-entry trampoline unmasks user IRQ delivery. */
+    console_write("Process Scheduler: starting two EL0 tasks and one fault-isolation task\n");
     fahim_scheduler_start();
 
-    /* The scheduler returned only after both processes exited. Stop IRQs
-     * before inspecting the shared frame or releasing either address space. */
     __asm__ volatile("msr daifset, #2\n\tisb" ::: "memory");
     const uint32_t scheduler_ticks = fahim_generic_timer_irq_count();
     fahim_generic_timer_stop();
 
     const uint32_t idle_waits = fahim_scheduler_idle_wait_count();
     const uint32_t wakeups = fahim_scheduler_wakeup_count();
+    const uint32_t user_faults = fahim_scheduler_user_fault_count();
     if (scheduler_ticks == 0u || *shared_counter != 2u ||
-        idle_waits == 0u || wakeups != 2u) {
-        console_write("Process Scheduler self-test: FAIL (timer preemption did not run both tasks) ticks=");
+        idle_waits == 0u || wakeups != 2u || user_faults != 1u) {
+        console_write("Process Scheduler self-test: FAIL ticks=");
         console_write_hex64(scheduler_ticks);
         console_write(" shared=");
         console_write_hex64(*shared_counter);
@@ -454,16 +485,20 @@ static void run_process_scheduler_self_test(void) {
         console_write_hex64(idle_waits);
         console_write(" wakeups=");
         console_write_hex64(wakeups);
+        console_write(" faults=");
+        console_write_hex64(user_faults);
         console_write("\n");
         halt_forever();
     }
 
-    console_write("Process Scheduler timer preemption ticks: ");
+    console_write("Process Scheduler timer ticks: ");
     console_write_hex64(scheduler_ticks);
     console_write(" idle waits: ");
     console_write_hex64(idle_waits);
     console_write(" wakeups: ");
     console_write_hex64(wakeups);
+    console_write(" user faults: ");
+    console_write_hex64(user_faults);
     console_write("\n");
 
     if (fahim_scheduler_is_active()) {
@@ -474,15 +509,18 @@ static void run_process_scheduler_self_test(void) {
     fahim_scheduler_reset();
     if (fahim_address_space_destroy(space_a) != 0 ||
         fahim_address_space_destroy(space_b) != 0 ||
+        fahim_address_space_destroy(fault_space) != 0 ||
         fahim_page_allocator_free(code_page, 1u) != 0 ||
+        fahim_page_allocator_free(fault_code_page, 1u) != 0 ||
         fahim_page_allocator_free(stack_page_a, 1u) != 0 ||
         fahim_page_allocator_free(stack_page_b, 1u) != 0 ||
+        fahim_page_allocator_free(fault_stack_page, 1u) != 0 ||
         fahim_page_allocator_free(shared_page, 1u) != 0) {
         console_write("Process Scheduler self-test: FAIL (cleanup)\n");
         halt_forever();
     }
 
-    console_write("Process Scheduler self-test: PASS (timer preemption, sleep/wakeup, idle WFI, two EL0 tasks, TTBR0 switching, syscalls, exit)\n");
+    console_write("Process Scheduler self-test: PASS (timer preemption, sleep/wakeup, idle WFI, EL0 fault isolation, TTBR0 switching, syscalls, exit)\n");
 }
 
 static void run_timer_irq_self_test(void) {
