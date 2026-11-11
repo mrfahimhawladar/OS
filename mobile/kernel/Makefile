@@ -23,7 +23,7 @@ ASFLAGS := $(CFLAGS)
 LDFLAGS := -T linker/arm64-qemu.ld -nostdlib
 
 SOURCES := core/main.c core/console/fdt_uart.c core/memory/fdt_memory.c \
-           core/exception.c
+           core/platform/fdt_gicv3.c core/exception.c
 OBJECTS := $(patsubst %.c,$(BUILD)/%.o,$(SOURCES)) \
            $(BUILD)/arch/arm64/boot/entry.o
 

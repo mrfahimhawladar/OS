@@ -2,6 +2,7 @@
 #include <stdint.h>
 
 #include "memory.h"
+#include "gicv3_platform.h"
 
 extern uint8_t __kernel_start[];
 extern uint8_t __kernel_end[];
@@ -41,6 +42,32 @@ static void console_write_region(const char *label,
     console_write(" bytes\n");
 }
 
+static void console_write_gicv3(const gicv3_platform_info_t *gic) {
+    console_write("GICv3 Device Tree: discovered\n");
+    console_write("GICD base: ");
+    console_write_hex64(gic->distributor.base);
+    console_write(" size: ");
+    console_write_hex64(gic->distributor.size);
+    console_write(" bytes\n");
+
+    console_write("GICR regions: ");
+    console_write_hex64(gic->redistributor_region_count);
+    console_write("\n");
+    for (size_t i = 0; i < gic->redistributor_region_count; ++i) {
+        console_write("GICR base: ");
+        console_write_hex64(gic->redistributors[i].base);
+        console_write(" size: ");
+        console_write_hex64(gic->redistributors[i].size);
+        console_write(" bytes\n");
+    }
+
+    if (gic->redistributor_stride != 0u) {
+        console_write("GICR stride: ");
+        console_write_hex64(gic->redistributor_stride);
+        console_write(" bytes\n");
+    }
+}
+
 void kernel_main(const void *dtb) {
     if (console_init_from_fdt(dtb) != 0) {
         halt_forever();
@@ -66,6 +93,19 @@ void kernel_main(const void *dtb) {
     }
     console_write("Boot exception level: EL1 confirmed\n");
     console_write("Exception vectors: VBAR_EL1 installed\n");
+
+    gicv3_platform_info_t gic;
+    const int gic_result = gicv3_discover_from_fdt(dtb, &gic);
+    if (gic_result != 0) {
+        console_write("GICv3 Device Tree: FAILED, code=");
+        console_write_hex64((uint64_t)(int64_t)gic_result);
+        console_write("\n");
+        halt_forever();
+    }
+    console_write("GICv3 Device Tree: validated\n");
+    console_write("GICv3 driver: not initialized yet\n");
+    console_write("Interrupts remain masked\n");
+    console_write_gicv3(&gic);
 
     memory_layout_t layout;
     const int result = memory_layout_from_dtb(
@@ -109,5 +149,6 @@ void kernel_main(const void *dtb) {
 #endif
 
     console_write("Milestone 4: exception vectors installed.\n");
+    console_write("Milestone 5A: GICv3 platform resources discovered.\n");
     halt_forever();
 }

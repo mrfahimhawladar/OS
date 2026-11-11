@@ -41,7 +41,7 @@ jobs:
         run: |
           set +e
           timeout 6s qemu-system-aarch64 \
-            -machine virt \
+            -machine virt,gic-version=3 \
             -cpu cortex-a57 \
             -m 512M \
             -nographic \
@@ -62,13 +62,17 @@ jobs:
           grep -q "PL011 UART: initialized from Device Tree" qemu-arm64.log
           grep -q "Boot exception level: EL1 confirmed" qemu-arm64.log
           grep -q "Exception vectors: VBAR_EL1 installed" qemu-arm64.log
+          grep -q "GICv3 Device Tree: validated" qemu-arm64.log
+          grep -q "GICD base: 0x0000000008000000" qemu-arm64.log
+          grep -q "GICR base: 0x00000000080a0000" qemu-arm64.log
+          grep -q "GICv3 driver: not initialized yet" qemu-arm64.log
           grep -q "Memory layout: validated" qemu-arm64.log
           grep -q "RAM region base: 0x0000000040000000 size: 0x0000000020000000 bytes" qemu-arm64.log
           grep -q "Reserved region base: 0x0000000040000000" qemu-arm64.log
           grep -q "Reserved region base: 0x0000000040200000" qemu-arm64.log
           grep -q "Usable region base: 0x0000000040100000" qemu-arm64.log
           grep -q "Milestone 3: reserved memory exclusions." qemu-arm64.log
-          grep -q "Milestone 4: exception vectors installed." qemu-arm64.log
+          grep -q "Milestone 5A: GICv3 platform resources discovered." qemu-arm64.log
 
       - name: Build controlled exception self-test kernel
         run: make -C mobile/kernel CROSS_COMPILE=aarch64-linux-gnu- EXCEPTION_SELFTEST=1
@@ -78,7 +82,7 @@ jobs:
         run: |
           set +e
           timeout 6s qemu-system-aarch64 \
-            -machine virt \
+            -machine virt,gic-version=3 \
             -cpu cortex-a57 \
             -m 512M \
             -nographic \
