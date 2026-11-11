@@ -63,7 +63,7 @@ The kernel integrates upstream aarch64-paging 0.12.3 with a custom no-heap Trans
 
 The reference map keeps a 48-bit lower-VA identity mapping for the running boot PC and stack, and adds a 48-bit upper-VA direct-map alias through TTBR1. Both use 4 KiB granules. FDT-discovered RAM is mapped as cacheable Normal-WB memory; FDT-discovered GIC Distributor/Redistributor windows and the PL011 UART are mapped as Device-nGnRnE in both ranges. Linker-provided kernel text and rodata boundaries receive separate RO/executable and RO/XN permissions; data and BSS remain RW/XN.
 
-QEMU verification checks continued execution after SCTLR_EL1.M is enabled, tests physical-page read/write through the lower identity map, and separately tests read/write through a TTBR1 high-half alias. The kernel still executes from the lower identity address; this milestone does not yet relocate the kernel PC/stack or provide isolated EL0 process address spaces.
+QEMU verification checks continued execution after SCTLR_EL1.M is enabled, tests physical-page read/write through the lower identity map, and separately tests read/write through a TTBR1 high-half alias. The kernel now executes through the TTBR1 high-half alias while retaining lower identity mappings for kernel data, boot DTB and MMIO references. Isolated EL0 page tables are prepared but are not yet activated for user execution.
 
 The upstream page-table crate is MIT OR Apache-2.0 and is not an officially supported Google product. Third-party details and the exact pinned version are in THIRD_PARTY_NOTICES.md.
 
@@ -83,6 +83,13 @@ The first user mapping API supports 4 KiB EL0 pages with either read/write + exe
 QEMU tests create two address spaces, map the same virtual address to different physical pages with different EL0 permissions, reject a duplicate mapping, unmap one space while verifying the other remains intact, remap, destroy both spaces, and verify the user frames can be returned to the physical allocator.
 
 This milestone prepares independent page tables; it does not yet activate a user address space, enter EL0, provide a process stack/context switch, or prove user-mode execution. Those require the kernel to relocate its active PC/stack to the high-half mapping and add the EL0 exception-return/scheduler path. SMP TLB shootdown is not implemented.
+
+
+## Milestone 6E: high-half kernel execution
+
+After building the existing TTBR1 direct map, the boot path now transfers live EL1 execution to the high-half alias without relocating the physical image. A small AArch64 transition routine preserves the AAPCS64 callee-saved registers, rebases the active stack and caller return address, moves VBAR_EL1 to the high-half exception-vector alias, invalidates the instruction cache, and branches to the same code through TTBR1. The lower identity mappings remain present for existing physical/DTB/MMIO pointers and for prepared process roots.
+
+QEMU checks the executing PC, active SP and VBAR_EL1 all resolve through the upper direct-map window. The production and controlled-exception boots then continue through the relocated kernel. This validates high-half execution and exception-vector relocation on the QEMU single-core reference platform; it does not yet enter EL0 or provide a scheduler/context switch.
 
 ## Reference platform and verification
 
@@ -107,15 +114,15 @@ Exception-test image: mobile/kernel/build/arm64-qemu-exception-test/fahim-kernel
 - Physical pages are now allocated from validated, page-aligned usable RAM on the single-core QEMU target. The bridge is identity-map-only and intentionally rejects initialization once the EL1 MMU is enabled.
 - Dynamic reserved-memory allocations and page-aligned allocation are not supported.
 - The current exception diagnostics are fatal for synchronous exceptions, FIQ and SError. Only the current-EL SPx IRQ vector has a returning dispatcher path so far.
-- The MMU now provides a TTBR1 high-half direct-map alias while the boot kernel still executes through TTBR0's lower identity map. There is no high-half PC/stack relocation, EL0 process address space, demand paging, guard-page policy or SMP TLB shootdown yet.
+- The kernel now runs through its TTBR1 high-half direct-map alias. The lower supervisor identity mappings remain for current kernel data and platform references. EL0 execution, process stack/context switching, demand paging, guard-page policy and SMP TLB shootdown are not implemented yet.
 - The upstream GICv3 driver is currently initialized for the single-core QEMU layout. The active dispatcher handles the EL1 physical timer PPI; general device IRQ registration, SPI routing, SMP and interrupt nesting remain future work.
 - The generic timer is now functional on the QEMU reference target. The scheduler, heap, storage, input, graphics, and touchscreen are not implemented.
 - This is not an Android image, phone ROM, or flashable artifact. QEMU success does not prove support for a real smartphone.
 
 ## Next milestones
 
-1. Relocate kernel execution and stack to the high-half mapping; add EL0 entry and context switching
-2. Add address-space activation, TLB invalidation and process stack management
+1. Add EL0 exception-return path and controlled entry into a prepared user address space
+2. Add address-space activation, process stack management and context switching
 3. Add allocator zones and SMP-safe page allocator publication with TLB shootdown
 4. Add scheduler and context switching
 5. Add storage, input, display and touchscreen driver frameworks
