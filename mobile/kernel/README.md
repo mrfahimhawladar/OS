@@ -138,6 +138,17 @@ The QEMU scheduler test adds a third EL0 task. It logs a marker and deliberately
 
 This is basic process-level termination for lower-EL synchronous faults, not a full POSIX signal model. Page-fault recovery, demand paging, copy-in/copy-out, syscall pointer validation, fault retry, user exception delivery and resource reaping remain future work.
 
+
+## Milestone 7E: parent/child lifecycle, WAITPID and zombie reaping
+
+The process table now records each task's parent PID and signed exit status. A child with a live parent becomes ZOMBIE on exit and retains its address-space handle until the parent collects it. SYS_WAITPID (x0 = child PID, or 0 for any child) blocks the caller when the selected child is still running, sleeping or otherwise not yet exited. Once the child exits, the parent is woken, receives the child PID in x0 and its exit status in x1, and the kernel destroys the child's inactive page-table tree and releases its ASID. An absent matching child returns -ECHILD.
+
+A parent that exits or faults before collecting children reparents them to the kernel. Orphaned zombie address spaces are reclaimed immediately; still-running orphan children are automatically reclaimed when they later exit. Root tasks also have their own inactive TTBR0 page tables destroyed on exit. Mapped data/code/stack frames remain owned by the process creator and are released by that owner after the scheduler test, rather than being freed by the page-table destructor.
+
+QEMU now creates four tasks: parent PID 101, child PID 202, independent sleeper PID 404 and faulting PID 303. The parent blocks in WAITPID; child 202 sleeps 30 ms and exits with status 42; the parent checks both returned PID and status before exiting. PID 404 independently sleeps 50 ms. PID 303 faults on a read-only code page and is terminated without stopping the other tasks. CI checks the parent's post-WAITPID marker, two idle waits/wakeups, one isolated fault, one successful WAITPID and four address-space reaps in both boot variants.
+
+The current WAITPID ABI returns the child's PID in x0 and exit status in x1; it does not yet copy a POSIX status pointer to user memory. Task slots are fixed-size and are reset for a new scheduler run; runtime task creation/slot reuse, signals, process groups and full user-memory pointer validation remain future work.
+
 ## Reference platform and verification
 
 GitHub Actions cross-compiles and boots the kernel in QEMU virt with 512 MiB RAM and GICv3 explicitly selected. It checks the RAM/reserved/usable ranges, GICv3 initialization, five timer IRQ deliveries, and the controlled synchronous-exception test.
@@ -168,9 +179,9 @@ Exception-test image: mobile/kernel/build/arm64-qemu-exception-test/fahim-kernel
 
 ## Next milestones
 
-1. Add wait queues, waitpid/child exit status, zombie states, task slot reuse and safe process/resource reaping
+1. Add runtime process creation, task-slot reuse, signals and process groups
 2. Add checked copy-in/copy-out, syscall pointer validation, user demand paging and fault retry
-3. Add ELF64 loader/exec, process creation, per-process user stack/TLS and a stable syscall ABI
+3. Add ELF64 loader/exec, per-process user stack/TLS and a stable syscall ABI
 4. Add kernel heap, memory zones, allocator reclamation and SMP-safe page allocation/TLB shootdown
 5. Add storage, VFS, block-device and filesystem layers
 6. Add input, display, GPU, audio, touchscreen and power-management driver frameworks
