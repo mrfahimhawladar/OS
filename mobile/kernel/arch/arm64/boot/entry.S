@@ -462,6 +462,7 @@ __user_process_code_start:
     b       .Luser_process_halt
 .Luser_message:
     .ascii  "Fahim"
+    .balign 4
 __user_process_code_end:
 
 /* Fault-isolation test process: attempt to write to its own RO+X code page. */
