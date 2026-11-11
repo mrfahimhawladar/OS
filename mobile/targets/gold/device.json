@@ -26,6 +26,9 @@
     "india_variant_confirmed": false,
     "china_gold_variant_reported_tested_by_tree_maintainer": true,
     "global_iron_variant_confirmed": false,
-    "flash_ready": false
-  }
+    "flash_ready": false,
+    "notes": "This device record is not a product target for the general Fahim OS project. Core development starts on the generic QEMU ARM64 virtual platform."
+  },
+  "role": "optional_future_hardware_port_research_only",
+  "project_primary_target": false
 }
