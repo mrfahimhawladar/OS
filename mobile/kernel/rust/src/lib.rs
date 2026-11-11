@@ -1254,6 +1254,10 @@ pub extern "C" fn fahim_address_space_map_user_page(
     };
     let end = virtual_address + PAGE_BYTES;
     match with_address_space_mut(handle, |mapping| {
+        // Mapping must be explicit: do not silently replace an existing page.
+        if address_space_page_is_mapped(mapping, virtual_address) {
+            return false;
+        }
         mapping.map_range(
             &MemoryRegion::new(virtual_address, end),
             PhysicalAddress(physical_address),
