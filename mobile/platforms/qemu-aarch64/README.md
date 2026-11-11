@@ -14,7 +14,7 @@ The QEMU `virt` machine provides standard virtual components such as:
 - PL011 serial console
 - VirtIO devices for later block, network, display, and input experiments
 
-QEMU's bare-metal boot mode places the generated DTB at the start of RAM (0x40000000). Other device locations must be discovered from the DTB rather than hard-coded in generic code. See the [QEMU virt documentation](https://www.qemu.org/docs/master/system/arm/virt).
+QEMU's bare-metal boot mode places the generated DTB at the start of RAM (0x40000000). In this setup QEMU reserves 1 MiB for the DTB, so the kernel ELF is linked at 0x40200000. Other device locations must be discovered from the DTB rather than hard-coded in generic code. See the [QEMU virt documentation](https://www.qemu.org/docs/master/system/arm/virt).
 
 ## Implemented first kernel milestone
 
@@ -23,7 +23,7 @@ QEMU's bare-metal boot mode places the generated DTB at the start of RAM (0x4000
 - FDT structure parsing to discover the PL011 UART
 - Serial console boot banner
 
-Source lives under `mobile/kernel/`. The GitHub Actions workflow `Build Fahim OS ARM64 Kernel` builds the ELF image and runs a serial-console smoke test in QEMU.
+Source lives under `mobile/kernel/`. The GitHub Actions workflow `Build Fahim OS ARM64 Kernel` cross-compiles the ELF image and boots it in QEMU to verify the serial output.
 
 ## First boot goal
 
@@ -34,7 +34,6 @@ FAHIM OS ARM64
 Kernel entry: OK
 Device Tree: parsed
 PL011 UART: initialized from Device Tree
-Platform: QEMU virt (ARM64 reference target)
 ```
 
 ## What this platform does not prove
@@ -45,4 +44,4 @@ QEMU `virt` also is not a complete smartphone emulator. Its purpose is early ker
 
 ## Status
 
-The first ARM64 serial-console kernel implementation is committed. The QEMU CI smoke test is the current verification step.
+The ARM64 serial-console kernel compiles. The CI job is currently validating the boot path in QEMU; a green build is required before this milestone is marked complete.
