@@ -22,6 +22,11 @@ jobs:
       - name: Check out source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
+      - name: Install Rust stable and ARM64 bare-metal target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-none
+
       - name: Install AArch64 toolchain and QEMU
         run: |
           sudo apt-get update
@@ -65,7 +70,11 @@ jobs:
           grep -q "GICv3 Device Tree: validated" qemu-arm64.log
           grep -q "GICD base: 0x0000000008000000" qemu-arm64.log
           grep -q "GICR base: 0x00000000080a0000" qemu-arm64.log
-          grep -q "GICv3 driver: not initialized yet" qemu-arm64.log
+          grep -q "GICv3 driver: initialized (arm-gic 0.10.0)" qemu-arm64.log
+          grep -q "GICv3 Group 1: enabled for current CPU" qemu-arm64.log
+          grep -q "GICv3 CPU priority mask:" qemu-arm64.log
+          grep -q "GICv3 initialization self-test: PASS" qemu-arm64.log
+          grep -q "CPU IRQ delivery remains masked until dispatcher is installed" qemu-arm64.log
           grep -q "Memory layout: validated" qemu-arm64.log
           grep -q "RAM region base: 0x0000000040000000 size: 0x0000000020000000 bytes" qemu-arm64.log
           grep -q "Reserved region base: 0x0000000040000000" qemu-arm64.log

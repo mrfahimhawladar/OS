@@ -1,6 +1,6 @@
 CROSS_COMPILE ?= aarch64-linux-gnu-
 CC := $(CROSS_COMPILE)gcc
-LD := $(CROSS_COMPILE)ld
+LD := $(CROSS_COMPILE)gcc
 
 EXCEPTION_SELFTEST ?= 0
 ifeq ($(EXCEPTION_SELFTEST),1)
@@ -20,7 +20,12 @@ CFLAGS := -std=gnu11 -O2 -Wall -Wextra -Werror \
           -mcpu=cortex-a57 -mstrict-align -Iinclude $(SELFTEST_CFLAGS)
 
 ASFLAGS := $(CFLAGS)
-LDFLAGS := -T linker/arm64-qemu.ld -nostdlib
+LDFLAGS := -nostdlib -static -Wl,-T,linker/arm64-qemu.ld \
+           -Wl,-Map=$(MAP) -Wl,--build-id=none
+
+RUST_TARGET := aarch64-unknown-none
+RUST_TARGET_DIR := build/rust-target
+RUST_LIB := $(RUST_TARGET_DIR)/$(RUST_TARGET)/release/libfahim_gic_bridge.a
 
 SOURCES := core/main.c core/console/fdt_uart.c core/memory/fdt_memory.c \
            core/platform/fdt_gicv3.c core/exception.c
@@ -41,8 +46,12 @@ $(BUILD)/arch/arm64/boot/entry.o: arch/arm64/boot/entry.S
 	mkdir -p $(dir $@)
 	$(CC) $(ASFLAGS) -c $< -o $@
 
-$(KERNEL): $(OBJECTS) linker/arm64-qemu.ld
-	$(LD) $(LDFLAGS) -Map=$(MAP) -o $@ $(OBJECTS)
+$(RUST_LIB): rust/Cargo.toml rust/rust-toolchain.toml rust/src/lib.rs
+	cd rust && CARGO_TARGET_DIR=../$(RUST_TARGET_DIR) cargo build --target $(RUST_TARGET) --release
+
+$(KERNEL): $(OBJECTS) $(RUST_LIB) linker/arm64-qemu.ld
+	$(LD) $(LDFLAGS) -o $@ $(OBJECTS) $(RUST_LIB) \
+		-Wl,--start-group -lgcc -Wl,--end-group
 
 inspect: $(KERNEL)
 	$(CROSS_COMPILE)readelf -h $(KERNEL)

@@ -3,6 +3,7 @@
 
 #include "memory.h"
 #include "gicv3_platform.h"
+#include "gicv3_driver.h"
 
 extern uint8_t __kernel_start[];
 extern uint8_t __kernel_end[];
@@ -103,9 +104,41 @@ void kernel_main(const void *dtb) {
         halt_forever();
     }
     console_write("GICv3 Device Tree: validated\n");
-    console_write("GICv3 driver: not initialized yet\n");
-    console_write("Interrupts remain masked\n");
     console_write_gicv3(&gic);
+
+    /*
+     * arm-gic 0.10.0 currently accepts one contiguous GICR window.
+     * QEMU virt exposes one redistributor region for this single-CPU
+     * reference boot. Reject layouts we cannot safely represent.
+     */
+    if (gic.redistributor_region_count != 1u ||
+        gic.distributor.size < 0x10000u ||
+        gic.redistributors[0].size < 0x20000u) {
+        console_write("GICv3 driver: unsupported register window layout\n");
+        halt_forever();
+    }
+
+    const int gic_driver_result = fahim_gicv3_init(
+        gic.distributor.base, gic.redistributors[0].base, 1u);
+    if (gic_driver_result != 0) {
+        console_write("GICv3 driver: initialization FAILED, code=");
+        console_write_hex64((uint64_t)(int64_t)gic_driver_result);
+        console_write("\n");
+        halt_forever();
+    }
+
+    console_write("GICv3 driver: initialized (arm-gic 0.10.0)\n");
+    console_write("GICv3 Group 1: enabled for current CPU\n");
+    console_write("GICv3 CPU priority mask: ");
+    const uint32_t priority_mask = fahim_gicv3_read_priority_mask();
+    console_write_hex64(priority_mask);
+    console_write("\n");
+    if (priority_mask < 0xf0u) {
+        console_write("GICv3 initialization self-test: FAIL\n");
+        halt_forever();
+    }
+    console_write("GICv3 initialization self-test: PASS\n");
+    console_write("CPU IRQ delivery remains masked until dispatcher is installed\n");
 
     memory_layout_t layout;
     const int result = memory_layout_from_dtb(

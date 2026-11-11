@@ -29,9 +29,17 @@ The boot path clears BSS, normalizes EL2 entry to EL1h, installs a 2 KiB-aligned
 
 The QEMU reference machine is explicitly configured with gic-version=3. The kernel discovers the enabled arm,gic-v3 node from the boot Device Tree, validates its register tuples, and reports the Distributor and Redistributor MMIO regions.
 
-This is platform discovery only. It does not initialize the GIC, enable IRQs, or implement interrupt dispatch. These responsibilities will be supplied by a ready-made upstream GICv3 driver adapted to Fahim OS's small kernel interface rather than reimplemented here.
-
 The parser accepts one or more Redistributor regions up to the early-boot limit and validates optional #redistributor-regions and redistributor-stride properties.
+
+## Milestone 5B: upstream GICv3 driver integration
+
+Fahim OS integrates the maintained arm-gic 0.10.0 driver from ArmFirmwareCrates / TrustedFirmware.org through a small no_std Rust static-library bridge. The driver remains upstream code; Fahim OS supplies only the C ABI adapter and build integration.
+
+The QEMU single-core path validates the current register-window layout, constructs the upstream GICv3 driver, initializes the Redistributor and Distributor, enables Group 1 for the boot CPU, and configures the CPU priority mask. The EL2 entry path sets ICC_SRE_EL2.SRE and ICC_SRE_EL2.Enable so EL1 can access the GIC CPU-interface system registers.
+
+The bridge currently targets one contiguous Redistributor region and one boot CPU, matching the current QEMU reference setup. Other topologies are rejected rather than silently misconfigured. DAIF IRQ masking remains active: interrupt dispatch, interrupt acknowledge/EOI handling in the kernel, and timer delivery are still future milestones.
+
+Third-party source and licensing details are recorded in THIRD_PARTY_NOTICES.md. The upstream driver is dual-licensed under MIT OR Apache-2.0.
 
 ## Reference platform and verification
 
@@ -56,14 +64,14 @@ Exception-test image: mobile/kernel/build/arm64-qemu-exception-test/fahim-kernel
 - Usable memory is detected and reported only; no physical allocator uses it yet.
 - Dynamic reserved-memory allocations and page-aligned allocation are not supported.
 - Exception reporting is fatal-only; IRQ/FIQ/SError delivery is not exercised yet.
-- GICv3 resources are discovered, but the GIC driver is not initialized and interrupts remain masked.
+- The upstream GICv3 driver is initialized for the single-core QEMU layout. The kernel IRQ dispatcher, acknowledge/EOI path, and timer IRQ test are not implemented yet.
 - The generic timer, scheduler, heap, storage, input, graphics, and touchscreen are not implemented.
 - This is not an Android image, phone ROM, or flashable artifact. QEMU success does not prove support for a real smartphone.
 
 ## Next milestones
 
-1. Adapt and integrate a ready-made GICv3 driver
-2. Integrate the ARM Generic Timer and test IRQ delivery
+1. Integrate the ARM Generic Timer and add the IRQ dispatcher with acknowledge/EOI handling
+2. Test physical timer IRQ delivery in QEMU
 3. Add a physical page allocator using validated, page-aligned usable RAM
 4. Add MMU/page tables
 5. Add scheduler and context switching

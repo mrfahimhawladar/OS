@@ -54,6 +54,14 @@ _start:
     msr     cnthctl_el2, x0
     msr     cntvoff_el2, xzr
 
+    /*
+     * Permit EL1 to access the GICv3 CPU-interface system registers.
+     * ICC_SRE_EL2.SRE (bit 0) and Enable (bit 3) must both be set.
+     */
+    mov     x0, #0x9
+    msr     icc_sre_el2, x0
+    isb
+
     /* EL1h (M[3:0] = 0101), with all DAIF masks set. */
     mov     x0, #0x3c5
     msr     spsr_el2, x0
