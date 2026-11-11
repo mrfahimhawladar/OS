@@ -91,6 +91,15 @@ After building the existing TTBR1 direct map, the boot path now transfers live E
 
 QEMU checks the executing PC, active SP and VBAR_EL1 all resolve through the upper direct-map window. The production and controlled-exception boots then continue through the relocated kernel. This validates high-half execution and exception-vector relocation on the QEMU single-core reference platform; it does not yet enter EL0 or provide a scheduler/context switch.
 
+
+## Milestone 6F: first EL0 execution and SVC return
+
+The kernel now activates a prepared TTBR0 address space, loads an EL0 stack pointer and enters a small AArch64 user payload with ERET. The lower-EL AArch64 synchronous vector handles the dedicated SVC exit used by the smoke test. The handler reads the return trampoline address, deactivates the process mapping through the upstream paging crate (restoring the previous kernel TTBR0 and invalidating the process ASID), and changes ELR_EL1/SPSR_EL1 so ERET resumes the saved EL1 caller. The user payload returns a known value in x0 to prove that the EL0 instruction stream actually ran.
+
+The payload is assembled by the existing AArch64 toolchain into kernel rodata, copied to a separately allocated frame, mapped as user read-only executable, and paired with a user read/write execute-never stack page. QEMU verifies successful EL0 entry, SVC exit, kernel TTBR0 restoration, address-space destruction and physical-frame release in both production and controlled-exception boots.
+
+This is a single-core, one-shot EL0 execution test, not a scheduler or general syscall ABI. User faults other than the dedicated exit SVC still take the fatal diagnostic path. Multiple runnable processes, timer preemption in EL0, process context switching and SMP TLB shootdown remain future work.
+
 ## Reference platform and verification
 
 GitHub Actions cross-compiles and boots the kernel in QEMU virt with 512 MiB RAM and GICv3 explicitly selected. It checks the RAM/reserved/usable ranges, GICv3 initialization, five timer IRQ deliveries, and the controlled synchronous-exception test.
@@ -114,15 +123,15 @@ Exception-test image: mobile/kernel/build/arm64-qemu-exception-test/fahim-kernel
 - Physical pages are now allocated from validated, page-aligned usable RAM on the single-core QEMU target. The bridge is identity-map-only and intentionally rejects initialization once the EL1 MMU is enabled.
 - Dynamic reserved-memory allocations and page-aligned allocation are not supported.
 - The current exception diagnostics are fatal for synchronous exceptions, FIQ and SError. Only the current-EL SPx IRQ vector has a returning dispatcher path so far.
-- The kernel now runs through its TTBR1 high-half direct-map alias. The lower supervisor identity mappings remain for current kernel data and platform references. EL0 execution, process stack/context switching, demand paging, guard-page policy and SMP TLB shootdown are not implemented yet.
+- The kernel now runs through its TTBR1 high-half direct-map alias and can enter one prepared EL0 address space for a one-shot SVC smoke test. The lower supervisor identity mappings remain for current kernel data and platform references. General syscalls, user-fault recovery, scheduler/process context switching, demand paging, guard-page policy and SMP TLB shootdown are not implemented yet.
 - The upstream GICv3 driver is currently initialized for the single-core QEMU layout. The active dispatcher handles the EL1 physical timer PPI; general device IRQ registration, SPI routing, SMP and interrupt nesting remain future work.
 - The generic timer is now functional on the QEMU reference target. The scheduler, heap, storage, input, graphics, and touchscreen are not implemented.
 - This is not an Android image, phone ROM, or flashable artifact. QEMU success does not prove support for a real smartphone.
 
 ## Next milestones
 
-1. Add EL0 exception-return path and controlled entry into a prepared user address space
-2. Add address-space activation, process stack management and context switching
+1. Add general EL0 syscall dispatch and user-fault handling
+2. Add process scheduler, saved context structures, timer preemption and context switching
 3. Add allocator zones and SMP-safe page allocator publication with TLB shootdown
 4. Add scheduler and context switching
 5. Add storage, input, display and touchscreen driver frameworks
