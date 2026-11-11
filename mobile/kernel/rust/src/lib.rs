@@ -1,5 +1,7 @@
 #![no_std]
 
+pub mod elf_loader;
+
 use arm_gic::{
     gicv3::{
         registers::{Gicd, GicrSgi},
