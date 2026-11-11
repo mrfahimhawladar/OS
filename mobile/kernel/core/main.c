@@ -16,6 +16,7 @@ extern uint8_t __text_start[];
 extern uint8_t __text_end[];
 extern uint8_t __rodata_start[];
 extern uint8_t __rodata_end[];
+extern uint8_t __exception_vectors[];
 
 int console_init_from_fdt(const void *dtb);
 void console_write(const char *text);
@@ -106,6 +107,25 @@ static void run_page_allocator_self_test(const memory_layout_t *layout) {
     console_write("Physical Page Allocator self-test: PASS (4 KiB page, 4-page block, read/write, free/reuse)\n");
 }
 
+static int high_half_execution_self_test(void) {
+    uintptr_t pc;
+    uintptr_t stack_pointer;
+    uintptr_t vector_base;
+    __asm__ volatile(
+        "adr %0, .\n\t"
+        "mov %1, sp\n\t"
+        "mrs %2, vbar_el1"
+        : "=&r"(pc), "=&r"(stack_pointer), "=&r"(vector_base)
+        :
+        : "memory"
+    );
+
+    const uintptr_t high_half_base = (uintptr_t)0xffff000000000000ull;
+    return (pc & high_half_base) == high_half_base
+        && (stack_pointer & high_half_base) == high_half_base
+        && vector_base == (uintptr_t)__exception_vectors;
+}
+
 static void run_mmu_self_test(const memory_layout_t *layout,
                                 const gicv3_platform_info_t *gic) {
     memory_region_t devices[GICV3_MAX_REDISTRIBUTOR_REGIONS + 2u];
@@ -144,8 +164,34 @@ static void run_mmu_self_test(const memory_layout_t *layout,
         halt_forever();
     }
 
+    /*
+     * The lower identity alias remains mapped, but all new kernel execution
+     * now proceeds from TTBR1's high-half direct map.
+     */
+    fahim_relocate_high_half();
+    if (!high_half_execution_self_test()) {
+        uintptr_t pc;
+        uintptr_t stack_pointer;
+        uintptr_t vector_base;
+        __asm__ volatile(
+            "adr %0, .\n\tmov %1, sp\n\tmrs %2, vbar_el1"
+            : "=&r"(pc), "=&r"(stack_pointer), "=&r"(vector_base)
+            :
+            : "memory"
+        );
+        console_write("Kernel relocation: FAIL, PC=");
+        console_write_hex64(pc);
+        console_write(" SP=");
+        console_write_hex64(stack_pointer);
+        console_write(" VBAR=");
+        console_write_hex64(vector_base);
+        console_write("\n");
+        halt_forever();
+    }
+    console_write("Kernel relocation: high-half PC, SP, VBAR verified (TTBR1)\n");
+
     /* The UART remains usable only if its mapping has Device memory attributes. */
-    console_write("MMU: EL1 translation enabled (TTBR0 identity map)\n");
+    console_write("MMU: EL1 translation enabled (TTBR0 identity map + TTBR1 high-half execution)\n");
     console_write("MMU: RAM Normal-WB; GIC/PL011 Device-nGnRnE\n");
     console_write("MMU: kernel text RO+X; rodata RO+XN; data RW+XN\n");
 
