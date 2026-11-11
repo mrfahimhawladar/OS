@@ -45,6 +45,7 @@ static volatile int scheduler_active;
 static uint64_t scheduler_ticks;
 static uint32_t scheduler_idle_waits;
 static uint32_t scheduler_wakeups;
+static uint32_t scheduler_user_faults;
 
 extern void fahim_context_switch(fahim_task_context_t *previous,
                                  const fahim_task_context_t *next);
@@ -187,6 +188,7 @@ void fahim_scheduler_start(void) {
     scheduler_ticks = 0u;
     scheduler_idle_waits = 0u;
     scheduler_wakeups = 0u;
+    scheduler_user_faults = 0u;
     scheduler_active = 1;
 
     const int first = pick_next_task();
@@ -313,6 +315,19 @@ uint32_t fahim_scheduler_wakeup_count(void) {
     return scheduler_wakeups;
 }
 
+uint32_t fahim_scheduler_user_fault_count(void) {
+    return scheduler_user_faults;
+}
+
+void fahim_scheduler_fault_current(void) {
+    if (!scheduler_active || current_task < 0) {
+        scheduler_halt();
+    }
+    scheduler_user_faults++;
+    fahim_scheduler_exit_current();
+}
+
+
 void fahim_scheduler_reset(void) {
     if (scheduler_active) {
         return;
@@ -327,4 +342,5 @@ void fahim_scheduler_reset(void) {
     scheduler_ticks = 0u;
     scheduler_idle_waits = 0u;
     scheduler_wakeups = 0u;
+    scheduler_user_faults = 0u;
 }

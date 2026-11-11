@@ -400,6 +400,24 @@ __user_process_code_start:
     b       .Luser_process_halt
 __user_process_code_end:
 
+/* Fault-isolation test process: attempt to write to its own RO+X code page. */
+.balign 4
+.global __user_fault_code_start
+.global __user_fault_code_end
+__user_fault_code_start:
+    movz    x8, #3
+    svc     #0                  /* x0 = process id */
+    movz    x1, #0xf
+    movz    x8, #4
+    svc     #0                  /* log fault-test marker */
+    movz    x10, #0x20, lsl #16
+    movk    x10, #0x1, lsl #32  /* 0x100200000: read-only executable page */
+    str     xzr, [x10]          /* EL0 permission fault; process must be killed */
+.Lfault_process_halt:
+    wfe
+    b       .Lfault_process_halt
+__user_fault_code_end:
+
 .section .bss.stack, "aw", %nobits
 .align 12
 .global __stack_bottom

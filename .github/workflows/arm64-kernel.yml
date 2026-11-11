@@ -92,9 +92,11 @@ jobs:
           grep -q "EL0 process 0x00000000000000ca ran marker 0x000000000000000c" qemu-arm64.log
           grep -q "EL0 process 0x0000000000000065 ran marker 0x000000000000000b" qemu-arm64.log
           grep -q "EL0 process 0x00000000000000ca ran marker 0x000000000000000b" qemu-arm64.log
-          grep -q "Process Scheduler timer preemption ticks:" qemu-arm64.log
-          grep -q "idle waits: 0x0000000000000002 wakeups: 0x0000000000000002" qemu-arm64.log
-          grep -q "Process Scheduler self-test: PASS (timer preemption, sleep/wakeup, idle WFI, two EL0 tasks, TTBR0 switching, syscalls, exit)" qemu-arm64.log
+          grep -q "EL0 process 0x000000000000012f ran marker 0x000000000000000f" qemu-arm64.log
+          grep -q "EL0 fault: process 0x000000000000012f" qemu-arm64.log
+          grep -q "Process Scheduler timer ticks:" qemu-arm64.log
+          grep -q "idle waits: 0x0000000000000002 wakeups: 0x0000000000000002 user faults: 0x0000000000000001" qemu-arm64.log
+          grep -q "Process Scheduler self-test: PASS (timer preemption, sleep/wakeup, idle WFI, EL0 fault isolation, TTBR0 switching, syscalls, exit)" qemu-arm64.log
           grep -q "RAM region base: 0x0000000040000000 size: 0x0000000020000000 bytes" qemu-arm64.log
           grep -q "Reserved region base: 0x0000000040000000" qemu-arm64.log
           grep -q "Reserved region base: 0x0000000040200000" qemu-arm64.log
@@ -138,9 +140,11 @@ jobs:
           grep -q "EL0 process 0x00000000000000ca ran marker 0x000000000000000c" qemu-exception.log
           grep -q "EL0 process 0x0000000000000065 ran marker 0x000000000000000b" qemu-exception.log
           grep -q "EL0 process 0x00000000000000ca ran marker 0x000000000000000b" qemu-exception.log
-          grep -q "Process Scheduler timer preemption ticks:" qemu-exception.log
-          grep -q "idle waits: 0x0000000000000002 wakeups: 0x0000000000000002" qemu-exception.log
-          grep -q "Process Scheduler self-test: PASS (timer preemption, sleep/wakeup, idle WFI, two EL0 tasks, TTBR0 switching, syscalls, exit)" qemu-exception.log
+          grep -q "EL0 process 0x000000000000012f ran marker 0x000000000000000f" qemu-exception.log
+          grep -q "EL0 fault: process 0x000000000000012f" qemu-exception.log
+          grep -q "Process Scheduler timer ticks:" qemu-exception.log
+          grep -q "idle waits: 0x0000000000000002 wakeups: 0x0000000000000002 user faults: 0x0000000000000001" qemu-exception.log
+          grep -q "Process Scheduler self-test: PASS (timer preemption, sleep/wakeup, idle WFI, EL0 fault isolation, TTBR0 switching, syscalls, exit)" qemu-exception.log
           grep -q "ARM Generic Timer IRQ test: PASS (5 interrupts, PPI 30)" qemu-exception.log
           grep -q "Triggering controlled BRK exception" qemu-exception.log
           grep -q "Exception vector: current EL SPx synchronous" qemu-exception.log
