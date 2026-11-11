@@ -236,6 +236,41 @@ static void run_mmu_self_test(const memory_layout_t *layout,
 }
 
 
+static void synchronize_user_code_cache(uintptr_t writable_alias,
+                                                uintptr_t executable_alias,
+                                                size_t length) {
+    uint64_t cache_type_register;
+    __asm__ volatile("mrs %0, CTR_EL0" : "=r"(cache_type_register));
+
+    /* CTR_EL0 line-size fields are log2(words per line). */
+    const size_t data_line_bytes =
+        (size_t)4u << ((cache_type_register >> 16) & 0x0fu);
+    const size_t instruction_line_bytes =
+        (size_t)4u << (cache_type_register & 0x0fu);
+
+    const uintptr_t data_start =
+        writable_alias & ~(uintptr_t)(data_line_bytes - 1u);
+    const uintptr_t data_end =
+        (writable_alias + length + data_line_bytes - 1u)
+        & ~(uintptr_t)(data_line_bytes - 1u);
+    for (uintptr_t address = data_start; address < data_end;
+         address += data_line_bytes) {
+        __asm__ volatile("dc cvau, %0" : : "r"(address) : "memory");
+    }
+    __asm__ volatile("dsb ish" ::: "memory");
+
+    const uintptr_t instruction_start =
+        executable_alias & ~(uintptr_t)(instruction_line_bytes - 1u);
+    const uintptr_t instruction_end =
+        (executable_alias + length + instruction_line_bytes - 1u)
+        & ~(uintptr_t)(instruction_line_bytes - 1u);
+    for (uintptr_t address = instruction_start; address < instruction_end;
+         address += instruction_line_bytes) {
+        __asm__ volatile("ic ivau, %0" : : "r"(address) : "memory");
+    }
+    __asm__ volatile("dsb ish\n\tisb" ::: "memory");
+}
+
 static void run_user_mode_self_test(void) {
     const uint32_t space = fahim_address_space_create();
     if (space == UINT32_MAX) {
@@ -281,6 +316,8 @@ static void run_user_mode_self_test(void) {
         console_write("EL0 User Mode self-test: FAIL (TTBR0 activation)\n");
         halt_forever();
     }
+    synchronize_user_code_cache(
+        (uintptr_t)code_page, (uintptr_t)user_code_va, code_size);
 
     /* User payload writes 0xF00D to x0 and exits via SVC #0xF02. */
     const uint64_t exit_value = fahim_enter_user(
