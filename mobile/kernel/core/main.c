@@ -8,6 +8,7 @@
 #include "page_allocator.h"
 #include "mmu.h"
 #include "address_space.h"
+#include "elf_loader.h"
 #include "scheduler.h"
 #include "console.h"
 
@@ -18,6 +19,8 @@ extern uint8_t __text_end[];
 extern uint8_t __rodata_start[];
 extern uint8_t __rodata_end[];
 extern uint8_t __exception_vectors[];
+extern const uint8_t __fahim_user_elf_image_start[];
+extern const uint8_t __fahim_user_elf_image_end[];
 extern const uint32_t __user_smoke_code_start[];
 extern const uint32_t __user_smoke_code_end[];
 extern const uint32_t __user_process_code_start[];
@@ -548,6 +551,107 @@ static void run_process_scheduler_self_test(void) {
     console_write("Process Lifecycle self-test: PASS (timer preemption, waitpid, child zombie/reap, exit status, timed sleep, idle WFI, EL0 fault isolation, address-space cleanup)\n");
 }
 
+static void run_elf_loader_self_test(void) {
+    const uint32_t address_space = fahim_address_space_create();
+    if (address_space == UINT32_MAX) {
+        console_write("ELF64 loader self-test: FAIL (address-space create)\n");
+        halt_forever();
+    }
+
+    const uint64_t stack_page = fahim_page_allocator_alloc(1u);
+    if (stack_page == UINT64_MAX) {
+        (void)fahim_address_space_destroy(address_space);
+        console_write("ELF64 loader self-test: FAIL (stack allocation)\n");
+        halt_forever();
+    }
+
+    const size_t image_length =
+        (uintptr_t)__fahim_user_elf_image_end -
+        (uintptr_t)__fahim_user_elf_image_start;
+    fahim_elf_loaded_image_t image = {0};
+    const int32_t load_result = fahim_elf64_load_user_image(
+        address_space,
+        __fahim_user_elf_image_start,
+        image_length,
+        &image
+    );
+    if (load_result != 0 || image.entry == 0u ||
+        image.segment_count < 3u ||
+        image.segment_count > FAHIM_ELF64_MAX_SEGMENTS) {
+        (void)fahim_address_space_destroy(address_space);
+        (void)fahim_page_allocator_free(stack_page, 1u);
+        console_write("ELF64 loader self-test: FAIL (ELF parse/load) code=");
+        console_write_hex64((uint64_t)(int64_t)load_result);
+        console_write(" segments=");
+        console_write_hex64(image.segment_count);
+        console_write("\n");
+        halt_forever();
+    }
+
+    const uint64_t user_stack_va = 0x0000000100400000ull;
+    if (fahim_address_space_map_user_page(
+            address_space,
+            user_stack_va,
+            stack_page,
+            FAHIM_USER_PAGE_RW_XN) != 0) {
+        (void)fahim_address_space_destroy(address_space);
+        (void)fahim_elf64_release_user_image(&image);
+        (void)fahim_page_allocator_free(stack_page, 1u);
+        console_write("ELF64 loader self-test: FAIL (user stack mapping)\n");
+        halt_forever();
+    }
+
+    /* Synchronize each executable PT_LOAD through its real user VA alias. */
+    if (fahim_address_space_activate(address_space) != 0) {
+        (void)fahim_address_space_destroy(address_space);
+        (void)fahim_elf64_release_user_image(&image);
+        (void)fahim_page_allocator_free(stack_page, 1u);
+        console_write("ELF64 loader self-test: FAIL (cache address-space activation)\n");
+        halt_forever();
+    }
+
+    for (uint32_t index = 0u; index < image.segment_count; ++index) {
+        const fahim_elf_loaded_segment_t *segment = &image.segments[index];
+        if (segment->permissions != FAHIM_USER_PAGE_RO_X) {
+            continue;
+        }
+        const size_t bytes = (size_t)segment->page_count * 4096u;
+        const uintptr_t writable_alias =
+            (uintptr_t)0xffff000000000000ull + (uintptr_t)segment->physical_base;
+        synchronize_user_code_cache(
+            writable_alias, (uintptr_t)segment->virtual_base, bytes);
+    }
+
+    if (fahim_address_space_deactivate_current() != 0) {
+        console_write("ELF64 loader self-test: FAIL (cache TTBR0 restore)\n");
+        halt_forever();
+    }
+
+    if (fahim_scheduler_create_user(
+            address_space,
+            image.entry,
+            user_stack_va + 4096u,
+            505u) < 0) {
+        (void)fahim_address_space_destroy(address_space);
+        (void)fahim_elf64_release_user_image(&image);
+        (void)fahim_page_allocator_free(stack_page, 1u);
+        console_write("ELF64 loader self-test: FAIL (task creation)\n");
+        halt_forever();
+    }
+
+    console_write("ELF64 loader: running static AArch64 ET_EXEC in EL0\n");
+    fahim_scheduler_start();
+
+    if (fahim_scheduler_is_active() ||
+        fahim_elf64_release_user_image(&image) != 0 ||
+        fahim_page_allocator_free(stack_page, 1u) != 0) {
+        console_write("ELF64 loader self-test: FAIL (image/stack release)\n");
+        halt_forever();
+    }
+
+    console_write("ELF64 loader self-test: PASS (Goblin ELF64 ET_EXEC, PT_LOAD permissions, BSS zeroing, EL0 execution, exit)\n");
+}
+
 static void run_timer_irq_self_test(void) {
     const uint32_t expected_ticks = 5u;
     const uint32_t interval_ms = 10u;
@@ -695,6 +799,7 @@ void kernel_main(const void *dtb) {
     run_mmu_self_test(&layout, &gic);
     run_timer_irq_self_test();
     run_process_scheduler_self_test();
+    run_elf_loader_self_test();
 
 #ifdef FAHIM_EXCEPTION_SELFTEST
     console_write("Triggering controlled BRK exception...\n");
