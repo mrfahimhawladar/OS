@@ -100,6 +100,15 @@ The payload is assembled by the existing AArch64 toolchain into kernel rodata, c
 
 This is a single-core, one-shot EL0 execution test, not a scheduler or general syscall ABI. User faults other than the dedicated exit SVC still take the fatal diagnostic path. Multiple runnable processes, timer preemption in EL0, process context switching and SMP TLB shootdown remain future work.
 
+
+## Milestone 7A: first EL0 process scheduler and syscall dispatcher
+
+Fahim OS now includes an AArch64 callee-saved context-switch primitive adapted from the small scheduler implementation in KNCn23/mini-rtos. Each task has a private EL1 kernel stack and a saved AArch64 context (x19-x30 and SP). The scheduler uses a round-robin ready-task picker and switches the current TTBR0 through the existing ASID-aware upstream paging bridge; TTBR1 remains the shared high-half kernel mapping. The lower-EL exception frame now saves ELR_EL1, SPSR_EL1 and SP_EL0 on each task's kernel stack so a suspended SVC can resume with the correct user return state.
+
+A table-driven AArch64 SVC dispatcher uses x8 for the syscall number, x0-x1 for arguments and x0 for the result. The initial minimal ABI exposes EXIT, YIELD, GETPID and LOG; unknown numbers return -ENOSYS. It is an Fahim OS-specific bootstrap ABI, not yet a POSIX or Linux syscall table.
+
+QEMU boots two EL0 tasks with separate TTBR0 address spaces and stacks while sharing one read-only executable page. Their syscall sequence verifies task IDs, round-robin yield, switching TTBR0 between distinct ASIDs, task exit, return to the boot kernel context and cleanup. This milestone verifies cooperative task switching. Timer-driven preemption, blocking waits/sleep, process reaping policies, user-fault isolation and SMP scheduling are not yet implemented.
+
 ## Reference platform and verification
 
 GitHub Actions cross-compiles and boots the kernel in QEMU virt with 512 MiB RAM and GICv3 explicitly selected. It checks the RAM/reserved/usable ranges, GICv3 initialization, five timer IRQ deliveries, and the controlled synchronous-exception test.
@@ -130,8 +139,8 @@ Exception-test image: mobile/kernel/build/arm64-qemu-exception-test/fahim-kernel
 
 ## Next milestones
 
-1. Add general EL0 syscall dispatch and user-fault handling
-2. Add process scheduler, saved context structures, timer preemption and context switching
+1. Add timer-preemptive scheduling, task sleep/wakeup and safe task reaping
+2. Add general syscall argument validation, user-fault isolation and richer process lifecycle
 3. Add allocator zones and SMP-safe page allocator publication with TLB shootdown
 4. Add scheduler and context switching
 5. Add storage, input, display and touchscreen driver frameworks
