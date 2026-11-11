@@ -238,8 +238,12 @@ static int append_fdt_reserve_map(const uint8_t *base,
 }
 
 static int append_reserved_node(const fdt_node_state_t *node,
+                                const fdt_node_state_t *parent,
                                 memory_layout_t *layout) {
-    if (!node->is_reserved_child || !node_is_enabled(node)) return 0;
+    if (!node->is_reserved_child || !node_is_enabled(node) ||
+        parent == NULL || !node_is_enabled(parent)) {
+        return 0;
+    }
 
     if (node->reg == NULL) {
         /* Dynamic reserved-memory needs a placement allocator; fail closed. */
@@ -316,7 +320,11 @@ static int parse_fdt_nodes(const uint8_t *base,
                     &layout->ram_count);
             }
 
-            if (result == 0) result = append_reserved_node(node, layout);
+            const fdt_node_state_t *parent =
+                depth > 1u ? &stack[depth - 2u] : NULL;
+            if (result == 0) {
+                result = append_reserved_node(node, parent, layout);
+            }
             if (result != 0) return result;
             --depth;
         } else if (token == FDT_PROP) {
