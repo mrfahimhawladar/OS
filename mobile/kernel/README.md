@@ -1,55 +1,45 @@
 # Fahim OS Kernel
 
-This directory is reserved for the new ARM64 kernel. The existing root-level x86 `kernel.cpp` is a separate experiment and must not be reused as the mobile kernel.
+This is the new ARM64 kernel implementation. The root-level x86 `kernel.cpp` is a separate learning prototype and is not reused as the mobile kernel.
 
-## Design baseline
+## Implemented milestone 1
 
-- Architecture: AArch64 / ARMv8-A
-- Kernel style: modular monolithic, initially
-- Core language: C
-- CPU-specific code: AArch64 Assembly
-- Freestanding build: cross-compiler, linker script, explicit memory map
-- First boot environment: QEMU `virt`
-- Device configuration: Device Tree, not phone-model checks scattered through core code
+- AArch64 assembly entry point and bootstrap stack
+- Freestanding C kernel entry
+- Flattened Device Tree (FDT) header and structure parsing
+- PL011 serial UART discovery via Device Tree `compatible` and `reg` properties
+- Polled serial text output
 
-## Initial source layout (planned)
+The first target is QEMU's generic ARM64 `virt` platform. For bare-metal guests QEMU places its generated DTB at the start of RAM (0x40000000); the kernel image is linked at 0x40080000. The UART is discovered from the DTB rather than assuming a phone-specific hardware address.
 
-```text
-mobile/kernel/
-  arch/arm64/
-    boot/
-    exceptions/
-    context/
-    mmu/
-  core/
-    console/
-    panic/
-    scheduler/
-    sync/
-    ipc/
-  mm/
-    physical/
-    virtual/
-    heap/
-  drivers/
-    irq/
-    timer/
-    serial/
-    virtio/
-  fs/
-  include/
-  linker/
+## Build
+
+Install an AArch64 Linux cross-toolchain, then:
+
+```sh
+make -C mobile/kernel CROSS_COMPILE=aarch64-linux-gnu-
 ```
 
-## Implementation order
+Output:
 
-1. AArch64 boot entry + linker layout
-2. PL011 UART console + panic output
-3. Device Tree (FDT) reader
-4. Physical page allocator
-5. Exception vectors + GIC + generic timer
-6. MMU mapping and kernel heap
-7. Scheduler and context switching
-8. VFS and RAM filesystem
+```
+mobile/kernel/build/arm64-qemu/fahim-kernel.elf
+```
 
-No source implementation or bootable ARM64 kernel exists yet. Each stage must be compiled and tested in QEMU before the next is claimed complete.
+A CI workflow builds the kernel and attempts a QEMU serial-console smoke test:
+`.github/workflows/arm64-kernel.yml`.
+
+## Important limits
+
+- This is only an early serial-console kernel milestone.
+- MMU/page tables, interrupt controller, timer, scheduler, heap, storage, input, graphics, and touchscreen are not implemented yet.
+- It is not an Android image, phone ROM, or flashable artifact.
+- QEMU success does not imply support for any real smartphone.
+
+## Next milestones
+
+1. Validate FDT memory nodes and create a memory map
+2. Add exception vectors and safe exception reporting
+3. Add the GIC and generic timer
+4. Add physical page allocator and MMU
+5. Add scheduler and context switching
