@@ -15,7 +15,7 @@ Start here:
 
 The POCO X6 Neo / `gold` folder is only an optional future device-port research note. It is not the primary target.
 
-**Current status:** an initial ARM64 kernel exists with an AArch64 entry point, Device Tree parser, and PL011 serial console. It compiles to an AArch64 ELF in a local cross-target check; the GitHub Actions QEMU boot test is the next verification gate. There is no graphical interface, phone driver suite, or flashable smartphone image yet.
+**Current status:** the initial ARM64 kernel has booted successfully in QEMU. It enters the C kernel, parses the generated Device Tree, discovers the PL011 UART, and prints the Fahim OS ARM64 banner. The kernel is still at an early serial-console stage; there is no graphics, smartphone UI, or physical-phone driver suite yet. No image is ready to flash.
 
 ## Separate learning project: x86 prototype
 
