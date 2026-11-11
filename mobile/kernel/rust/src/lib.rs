@@ -222,10 +222,12 @@ struct CMemoryRegion {
 struct IdentityPhysicalMemory;
 
 /*
- * The initial QEMU boot path runs with SCTLR_EL1.M clear, so physical RAM is
- * identity-addressable. Use the same opaque provenance technique documented
- * by the upstream crate's kernel demo; a plain integer-to-pointer cast is not
- * sufficient for Rust's pointer model.
+ * Kernel-owned RAM frames remain identity-addressable through the active
+ * supervisor-only TTBR0 mappings. Every process address space built here
+ * retains that same low identity map, so page-table frames remain accessible
+ * while mappings are prepared but inactive. Use the opaque provenance
+ * technique documented by the upstream crate's kernel demo; a plain integer-
+ * to-pointer cast is not sufficient for Rust's pointer model.
  */
 unsafe impl Provenance for IdentityPhysicalMemory {
     unsafe fn create(phys: usize) -> NonNull<u8> {
@@ -511,7 +513,8 @@ impl Translation<El1Attributes> for KernelTranslation {
         let physical = PAGE_ALLOCATOR
             .allocate_physical(PAGE_SIZE, core::num::NonZeroUsize::new(1).unwrap())
             .unwrap_or_else(|_| panic!("out of physical pages for page tables"));
-        // SAFETY: the allocator transfers this exclusive 4 KiB frame; the MMU is still off.
+        // SAFETY: the allocator transfers this exclusive 4 KiB frame. The
+        // active kernel TTBR0 keeps usable RAM identity-mapped for EL1 access.
         let pointer = unsafe { IdentityPhysicalMemory::create(physical) }
             .cast::<PageTable<El1Attributes>>();
         // SAFETY: a new frame is exclusively owned; an all-zero PageTable is valid.
