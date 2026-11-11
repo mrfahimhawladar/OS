@@ -373,8 +373,6 @@ static void run_process_scheduler_self_test(void) {
     for (size_t index = 0; index < code_size / sizeof(uint32_t); ++index) {
         destination[index] = source[index];
     }
-    synchronize_user_code_cache(code_alias, code_alias, code_size);
-
     const uintptr_t shared_alias =
         (uintptr_t)0xffff000000000000ull + (uintptr_t)shared_page;
     volatile uint64_t *shared_counter = (volatile uint64_t *)shared_alias;
@@ -403,6 +401,17 @@ static void run_process_scheduler_self_test(void) {
         fahim_address_space_map_user_page(
             space_b, shared_user_va, shared_page, FAHIM_USER_PAGE_RW_XN) != 0) {
         console_write("Process Scheduler self-test: FAIL (user mapping)\n");
+        halt_forever();
+    }
+
+    /* Invalidate the instruction-cache alias through a mapped user VA. */
+    if (fahim_address_space_activate(space_a) != 0) {
+        console_write("Process Scheduler self-test: FAIL (cache-maintenance address space)\n");
+        halt_forever();
+    }
+    synchronize_user_code_cache(code_alias, (uintptr_t)user_code_va, code_size);
+    if (fahim_address_space_deactivate_current() != 0) {
+        console_write("Process Scheduler self-test: FAIL (cache-maintenance TTBR0 restore)\n");
         halt_forever();
     }
 
