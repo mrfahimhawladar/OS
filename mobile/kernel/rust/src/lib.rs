@@ -12,6 +12,15 @@ use arm_generic_timer::{
     Timer, TimerInterface,
 };
 use frame_alloc::{AllocatorStats, PageSize, PhysRange, PhysicalAllocator, Provenance, RegionInit, SummaryBuddyAllocator};
+use aarch64_paging::{
+    descriptor::{El1Attributes, PhysicalAddress},
+    mair::{Mair, MairAttribute, NormalMemory},
+    paging::{Constraints, El1And0, MemoryRegion, PageTable, Translation},
+    Mapping,
+};
+use core::cell::UnsafeCell;
+use core::mem::{align_of, size_of, MaybeUninit};
+
 use core::{
     panic::PanicInfo,
     ptr::NonNull,
@@ -471,6 +480,264 @@ pub extern "C" fn fahim_page_allocator_self_test() -> i32 {
     } else {
         -5
     }
+}
+
+
+const PAGE_TABLE_RECORDS: usize = 64;
+const MMU_PAGE_BYTES: usize = 4096;
+const _: [(); MMU_PAGE_BYTES] = [(); size_of::<PageTable<El1Attributes>>()];
+const _: [(); MMU_PAGE_BYTES] = [(); align_of::<PageTable<El1Attributes>>()];
+
+#[derive(Clone, Copy, Debug)]
+struct PageTableRecord {
+    physical: usize,
+    pointer: NonNull<PageTable<El1Attributes>>,
+}
+
+#[derive(Debug)]
+struct KernelTranslation {
+    tables: [Option<PageTableRecord>; PAGE_TABLE_RECORDS],
+}
+
+impl KernelTranslation {
+    const fn new() -> Self {
+        Self { tables: [None; PAGE_TABLE_RECORDS] }
+    }
+}
+
+impl Translation<El1Attributes> for KernelTranslation {
+    fn allocate_table(&mut self) -> (NonNull<PageTable<El1Attributes>>, PhysicalAddress) {
+        let physical = PAGE_ALLOCATOR
+            .allocate_physical(PAGE_SIZE, core::num::NonZeroUsize::new(1).unwrap())
+            .unwrap_or_else(|_| panic!("out of physical pages for page tables"));
+        // SAFETY: the allocator transfers this exclusive 4 KiB frame; the MMU is still off.
+        let pointer = unsafe { IdentityPhysicalMemory::create(physical) }
+            .cast::<PageTable<El1Attributes>>();
+        // SAFETY: a new frame is exclusively owned; an all-zero PageTable is valid.
+        unsafe { core::ptr::write_bytes(pointer.as_ptr().cast::<u8>(), 0, MMU_PAGE_BYTES); }
+
+        let Some(slot) = self.tables.iter_mut().find(|slot| slot.is_none()) else {
+            // SAFETY: this is the exact live frame allocated above.
+            let address = unsafe { IdentityPhysicalMemory::destroy(pointer) };
+            unsafe {
+                PAGE_ALLOCATOR.deallocate_physical(
+                    PAGE_SIZE, core::num::NonZeroUsize::new(1).unwrap(), address
+                );
+            }
+            panic!("page-table record capacity exhausted");
+        };
+        *slot = Some(PageTableRecord { physical, pointer });
+        (pointer, PhysicalAddress(physical))
+    }
+
+    unsafe fn deallocate_table(&mut self, pointer: NonNull<PageTable<El1Attributes>>) {
+        let Some(slot) = self.tables.iter_mut().find(|slot| {
+            slot.as_ref().is_some_and(|record| record.pointer == pointer)
+        }) else {
+            panic!("attempt to free an unowned page table");
+        };
+        let record = slot.take().unwrap();
+        // SAFETY: pointer is the live allocation returned by allocate_table.
+        let physical = unsafe { IdentityPhysicalMemory::destroy(pointer) };
+        assert_eq!(physical, record.physical);
+        // SAFETY: return the exact 4 KiB frame relinquished above.
+        unsafe {
+            PAGE_ALLOCATOR.deallocate_physical(
+                PAGE_SIZE, core::num::NonZeroUsize::new(1).unwrap(), physical
+            );
+        }
+    }
+
+    fn physical_to_virtual(
+        &self,
+        physical: PhysicalAddress,
+    ) -> NonNull<PageTable<El1Attributes>> {
+        self.tables.iter().flatten()
+            .find(|record| record.physical == physical.0)
+            .map(|record| record.pointer)
+            .expect("page-table physical address is not owned")
+    }
+}
+
+type KernelMapping = Mapping<KernelTranslation, El1And0>;
+
+struct KernelMappingStorage(UnsafeCell<MaybeUninit<KernelMapping>>);
+// SAFETY: initialised once with IRQs masked, then read-only for the kernel lifetime.
+unsafe impl Sync for KernelMappingStorage {}
+static KERNEL_MAPPING: KernelMappingStorage =
+    KernelMappingStorage(UnsafeCell::new(MaybeUninit::uninit()));
+static MMU_INITIALIZED: AtomicBool = AtomicBool::new(false);
+
+const NORMAL_RW_XN: El1Attributes =
+    El1Attributes::VALID | El1Attributes::ATTRIBUTE_INDEX_1
+    | El1Attributes::INNER_SHAREABLE | El1Attributes::ACCESSED
+    | El1Attributes::PXN | El1Attributes::UXN;
+
+const NORMAL_CODE_RO: El1Attributes =
+    El1Attributes::VALID | El1Attributes::ATTRIBUTE_INDEX_1
+    | El1Attributes::INNER_SHAREABLE | El1Attributes::READ_ONLY
+    | El1Attributes::ACCESSED | El1Attributes::UXN;
+
+const NORMAL_RO_XN: El1Attributes =
+    El1Attributes::VALID | El1Attributes::ATTRIBUTE_INDEX_1
+    | El1Attributes::INNER_SHAREABLE | El1Attributes::READ_ONLY
+    | El1Attributes::ACCESSED | El1Attributes::PXN | El1Attributes::UXN;
+
+const DEVICE_XN: El1Attributes =
+    El1Attributes::VALID | El1Attributes::ATTRIBUTE_INDEX_0
+    | El1Attributes::OUTER_SHAREABLE | El1Attributes::ACCESSED
+    | El1Attributes::PXN | El1Attributes::UXN;
+
+fn range_is_inside_ram(ram: &[CMemoryRegion], start: usize, end: usize) -> bool {
+    if start >= end { return false; }
+    ram.iter().any(|region| {
+        let Ok(base) = usize::try_from(region.base) else { return false; };
+        let Ok(size) = usize::try_from(region.size) else { return false; };
+        let Some(region_end) = base.checked_add(size) else { return false; };
+        start >= base && end <= region_end
+    })
+}
+
+fn map_identity_range(
+    mapping: &mut KernelMapping,
+    base: usize,
+    size: usize,
+    attributes: El1Attributes,
+) -> Result<(), ()> {
+    let Some(end) = base.checked_add(size) else { return Err(()); };
+    if size == 0 || base & (MMU_PAGE_BYTES - 1) != 0 { return Err(()); }
+    mapping.map_range(
+        &MemoryRegion::new(base, end),
+        PhysicalAddress(base),
+        attributes,
+        Constraints::empty(),
+    ).map_err(|_| ())
+}
+
+/// Build and activate an EL1 identity map from the validated FDT memory map.
+/// The mapping is kept alive permanently because its page-table frames are active.
+#[no_mangle]
+pub extern "C" fn fahim_mmu_init(
+    ram_regions: *const CMemoryRegion,
+    ram_count: usize,
+    device_regions: *const CMemoryRegion,
+    device_count: usize,
+    text_start: u64,
+    text_end: u64,
+    rodata_start: u64,
+    rodata_end: u64,
+) -> i32 {
+    if MMU_INITIALIZED.load(Ordering::Acquire) { return -1; }
+    if !PAGE_ALLOCATOR_READY.load(Ordering::Acquire)
+        || ram_regions.is_null() || device_regions.is_null()
+        || ram_count == 0 || ram_count > PAGE_RANGE_CAPACITY
+        || device_count == 0 || device_count > 8
+    { return -2; }
+
+    let sctlr: u64;
+    let mmfr0: u64;
+    // SAFETY: both are readable EL1 system registers on AArch64.
+    unsafe {
+        core::arch::asm!("mrs {v}, SCTLR_EL1", v = out(reg) sctlr, options(nomem, nostack, preserves_flags));
+        core::arch::asm!("mrs {v}, ID_AA64MMFR0_EL1", v = out(reg) mmfr0, options(nomem, nostack, preserves_flags));
+    }
+    if (sctlr & 1) != 0 { return -3; }
+
+    // SAFETY: C passes the actual bounded memory-layout arrays.
+    let ram = unsafe { core::slice::from_raw_parts(ram_regions, ram_count) };
+    let devices = unsafe { core::slice::from_raw_parts(device_regions, device_count) };
+    let (Ok(text_start), Ok(text_end), Ok(rodata_start), Ok(rodata_end)) = (
+        usize::try_from(text_start), usize::try_from(text_end),
+        usize::try_from(rodata_start), usize::try_from(rodata_end),
+    ) else { return -4; };
+
+    if text_start & (MMU_PAGE_BYTES - 1) != 0
+        || text_end & (MMU_PAGE_BYTES - 1) != 0
+        || rodata_start & (MMU_PAGE_BYTES - 1) != 0
+        || rodata_end & (MMU_PAGE_BYTES - 1) != 0
+        || !range_is_inside_ram(ram, text_start, text_end)
+        || !range_is_inside_ram(ram, rodata_start, rodata_end)
+    { return -5; }
+
+    let mut mapping = Mapping::new(KernelTranslation::new(), 0, El1And0::with_asid(1));
+
+    // RAM is cacheable Normal memory, privileged RW and execute-never by default.
+    for region in ram {
+        let (Ok(base), Ok(size)) = (usize::try_from(region.base), usize::try_from(region.size)) else { return -6; };
+        if map_identity_range(&mut mapping, base, size, NORMAL_RW_XN).is_err() { return -7; }
+    }
+
+    // Device-nGnRnE memory is used for all discovered controller/console registers.
+    for region in devices {
+        let (Ok(base), Ok(size)) = (usize::try_from(region.base), usize::try_from(region.size)) else { return -8; };
+        if map_identity_range(&mut mapping, base, size, DEVICE_XN).is_err() { return -9; }
+    }
+
+    // Refine permissions for executable kernel text and read-only constants.
+    if map_identity_range(&mut mapping, text_start, text_end - text_start, NORMAL_CODE_RO).is_err() {
+        return -10;
+    }
+    if map_identity_range(&mut mapping, rodata_start, rodata_end - rodata_start, NORMAL_RO_XN).is_err() {
+        return -11;
+    }
+
+    const MAIR: Mair = Mair::EMPTY
+        .with_attribute(0, MairAttribute::DEVICE_NGNRNE)
+        .with_attribute(1, MairAttribute::normal(
+            NormalMemory::WriteBackNonTransientReadWriteAllocate,
+            NormalMemory::WriteBackNonTransientReadWriteAllocate,
+        ));
+
+    // 48-bit lower VA, 4 KiB granules, WB/WA inner-shareable walks.
+    // Disable TTBR1; cap IPS at 48 bits because this crate does not use LPA2.
+    let ips = (mmfr0 & 0xf).min(5);
+    let tcr: u64 = 16
+        | (1 << 8) | (1 << 10) | (3 << 12)
+        | (16 << 16) | (1 << 24) | (1 << 26) | (3 << 28) | (2 << 30)
+        | (1 << 23) | (ips << 32);
+
+    // SAFETY: this slot is written once with IRQs masked, then remains static.
+    unsafe { (*KERNEL_MAPPING.0.get()).write(mapping); }
+    // SAFETY: just initialised, and will never be moved or dropped.
+    let active_mapping = unsafe { (&*KERNEL_MAPPING.0.get()).assume_init_ref() };
+
+    let mair_value: u64 = MAIR.into();
+    unsafe {
+        core::arch::asm!(
+            "msr MAIR_EL1, {mair}",
+            "msr TCR_EL1, {tcr}",
+            "dsb sy",
+            "ic iallu",
+            "dsb sy",
+            "isb",
+            mair = in(reg) mair_value,
+            tcr = in(reg) tcr,
+            options(nostack, preserves_flags)
+        );
+    }
+
+    // SAFETY: RAM, kernel sections, GIC and UART are all identity mapped; the
+    // page-table pages are allocated from that mapped RAM and the Mapping stays alive.
+    let _previous_ttbr = unsafe { active_mapping.activate() };
+
+    const SCTLR_RES1: u64 = 0x30d0_0800;
+    let sctlr_enabled = sctlr | SCTLR_RES1 | 1 | (1 << 2) | (1 << 12);
+    unsafe {
+        core::arch::asm!(
+            "msr SCTLR_EL1, {value}",
+            "isb",
+            value = in(reg) sctlr_enabled,
+            options(nostack, preserves_flags)
+        );
+    }
+
+    MMU_INITIALIZED.store(true, Ordering::Release);
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn fahim_mmu_is_enabled() -> u32 {
+    if MMU_INITIALIZED.load(Ordering::Acquire) { 1 } else { 0 }
 }
 
 #[panic_handler]
