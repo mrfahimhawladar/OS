@@ -50,6 +50,10 @@ $(BUILD)/arch/arm64/boot/entry.o: arch/arm64/boot/entry.S
 	mkdir -p $(dir $@)
 	$(CC) $(ASFLAGS) -c $< -o $@
 
+$(BUILD)/arch/arm64/boot/context_switch.o: arch/arm64/boot/context_switch.S
+	mkdir -p $(dir $@)
+	$(CC) $(ASFLAGS) -c $< -o $@
+
 $(RUST_LIB): Makefile rust/Cargo.toml rust/rust-toolchain.toml rust/src/lib.rs
 	cd rust && CARGO_TARGET_DIR=../$(RUST_TARGET_DIR) RUSTFLAGS="$(KERNEL_RUSTFLAGS)" cargo build --target $(RUST_TARGET) --release
 
