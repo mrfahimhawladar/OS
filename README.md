@@ -4,18 +4,18 @@ Fahim OS is a project to build a **general-purpose smartphone operating system**
 
 ## Active project: Fahim OS Mobile
 
-The core OS is being designed independently of device-specific hardware. The first development platform is a virtual ARM64 reference machine (QEMU `virt`). Later, separate Board Support Packages can add support for individual real phones.
+The core OS is being developed independently of device-specific hardware. The first engineering platform is a virtual ARM64 reference machine (QEMU `virt`). Later, separate Board Support Packages can add support for individual real phones.
 
 Start here:
 
 - [Fahim OS Mobile architecture](mobile/architecture/overview.md)
-- [ARM64 kernel roadmap](mobile/kernel/README.md)
+- [ARM64 kernel source and roadmap](mobile/kernel/README.md)
 - [QEMU ARM64 reference platform](mobile/platforms/qemu-aarch64/README.md)
 - [Hardware board-port policy](mobile/boards/README.md)
 
 The POCO X6 Neo / `gold` folder is only an optional future device-port research note. It is not the primary target.
 
-**Current status:** architecture and platform planning are documented. An ARM64 kernel, QEMU boot image, graphical UI, and phone drivers have not yet been implemented or tested. No image is ready to flash.
+**Current status:** an initial ARM64 kernel exists with an AArch64 entry point, Device Tree parser, and PL011 serial console. It compiles to an AArch64 ELF in a local cross-target check; the GitHub Actions QEMU boot test is the next verification gate. There is no graphical interface, phone driver suite, or flashable smartphone image yet.
 
 ## Separate learning project: x86 prototype
 
@@ -34,6 +34,7 @@ Download the `fahim-os-iso` artifact from the latest successful **Build Fahim OS
 ## Repository boundaries
 
 - `mobile/` — active, device-independent smartphone OS project.
+- `mobile/kernel/` — new ARM64 kernel implementation.
 - `mobile/platforms/qemu-aarch64/` — first virtual ARM64 development target.
 - `mobile/boards/` — future real-device ports.
 - `mobile/targets/gold/` — optional POCO X6 Neo research only.
