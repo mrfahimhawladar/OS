@@ -4,34 +4,45 @@
 
 This target is a generic ARM64 virtual machine, not a POCO/Xiaomi phone. It is intended to test the portable kernel and generic drivers before any physical device port.
 
-## Expected virtual hardware
+## Virtual hardware
 
-The QEMU `virt` machine can provide standard virtualized components such as:
+The QEMU `virt` machine provides standard virtual components such as:
 - ARMv8/ARM64 CPU execution
-- RAM and a Device Tree description
-- Generic interrupt controller (GIC), depending on QEMU configuration
-- ARM generic timer
+- RAM and a generated Device Tree Blob (DTB)
+- Generic interrupt controller (GIC)
+- ARM architected timer
 - PL011 serial console
 - VirtIO devices for later block, network, display, and input experiments
 
-Exact device versions and command-line parameters will be recorded in the build scripts when the first bootable kernel is implemented.
+QEMU's bare-metal boot mode places the generated DTB at the start of RAM (0x40000000). Other device locations must be discovered from the DTB rather than hard-coded in generic code. See the [QEMU virt documentation](https://www.qemu.org/docs/master/system/arm/virt).
 
-## Initial boot milestone
+## Implemented first kernel milestone
 
-The first goal is deliberately small:
-1. Cross-compile an AArch64 freestanding kernel.
-2. Start it in QEMU's `virt` machine.
-3. Read and validate the Device Tree.
-4. Initialize a serial console.
-5. Print a Fahim OS kernel banner and report detected RAM.
-6. Halt safely.
+- ARM64 assembly entry and stack setup
+- Freestanding C kernel entry
+- FDT structure parsing to discover the PL011 UART
+- Serial console boot banner
 
-Only after this works should the project add MMU/page allocation, timer interrupts, scheduling, and virtual input/display.
+Source lives under `mobile/kernel/`. The GitHub Actions workflow `Build Fahim OS ARM64 Kernel` builds the ELF image and runs a serial-console smoke test in QEMU.
+
+## First boot goal
+
+The kernel should print:
+
+```text
+FAHIM OS ARM64
+Kernel entry: OK
+Device Tree: parsed
+PL011 UART: initialized from Device Tree
+Platform: QEMU virt (ARM64 reference target)
+```
 
 ## What this platform does not prove
 
 A successful QEMU boot does not prove support for any real smartphone. Commercial phones have different boot firmware, memory maps, interrupt controllers, display pipelines, touch controllers, power-management ICs, cameras, modems, GPUs, and vendor firmware.
 
+QEMU `virt` also is not a complete smartphone emulator. Its purpose is early kernel development and automated tests.
+
 ## Status
 
-Planning/documentation only. No ARM64 kernel binary or QEMU boot image has been built yet.
+The first ARM64 serial-console kernel implementation is committed. The QEMU CI smoke test is the current verification step.
