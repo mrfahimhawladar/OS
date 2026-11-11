@@ -210,21 +210,20 @@ static int append_fdt_reserve_map(const uint8_t *base,
         return -2;
     }
 
+    const uint32_t struct_end = struct_offset + struct_size;
+    const uint32_t strings_end = strings_offset + strings_size;
     uint32_t cursor = reserve_offset;
+
     while (cursor <= total_size && total_size - cursor >= 16u) {
-        const uint64_t address = read_be64(base + cursor);
-        const uint64_t size = read_be64(base + cursor + 8u);
-
-        if (address == 0u && size == 0u) return 0;
-
         const uint32_t entry_end = cursor + 16u;
-        const uint32_t struct_end = struct_offset + struct_size;
-        const uint32_t strings_end = strings_offset + strings_size;
-
         if ((cursor < struct_end && entry_end > struct_offset) ||
             (cursor < strings_end && entry_end > strings_offset)) {
             return -2;
         }
+
+        const uint64_t address = read_be64(base + cursor);
+        const uint64_t size = read_be64(base + cursor + 8u);
+        if (address == 0u && size == 0u) return 0;
 
         const int result = append_region(layout->reserved,
                                          MEMORY_MAP_MAX_RESERVED_REGIONS,
