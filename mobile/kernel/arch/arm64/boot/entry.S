@@ -72,6 +72,12 @@ _start:
 
 .Lel1_entry:
     msr     daifset, #0xf
+
+    /* Allow EL1 Rust/compiler FP+ASIMD use, while trapping EL0 until task FP
+     * state save/restore is implemented. CPACR_EL1.FPEN=0b01. */
+    movz    x9, #0x10, lsl #16
+    msr     cpacr_el1, x9
+    isb
     msr     spsel, #1
     ldr     x1, =__stack_top
     mov     sp, x1
