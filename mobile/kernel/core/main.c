@@ -25,6 +25,8 @@ int console_init_from_fdt(const void *dtb);
 void console_write(const char *text);
 void console_putc(char character);
 
+static void run_user_mode_self_test(void);
+
 static void halt_forever(void) {
     for (;;) {
         __asm__ volatile("msr daifset, #0xf\n\twfe" ::: "memory");
