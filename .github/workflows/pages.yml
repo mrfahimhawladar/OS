@@ -1,4 +1,4 @@
-name: Deploy Fahim OS Preview
+name: Deploy Fahim OS x86 Preview
 
 on:
   push:
@@ -6,7 +6,6 @@ on:
     paths:
       - "preview.html"
       - "index.html"
-      - "README.md"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
