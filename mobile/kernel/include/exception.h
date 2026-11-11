@@ -10,4 +10,7 @@ void exception_handle(const uint64_t *registers, uint64_t vector)
 /* Handles a current-EL SPx IRQ and returns to the interrupted context. */
 void irq_handle(void);
 
+/* Handles lower-EL AArch64 synchronous exceptions, including the test SVC. */
+void user_sync_handle(const uint64_t *registers);
+
 #endif
