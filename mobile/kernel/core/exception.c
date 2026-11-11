@@ -155,12 +155,17 @@ void user_sync_handle(uint64_t *registers) {
     __asm__ volatile("mrs %0, ESR_EL1" : "=r"(esr));
     const uint64_t exception_class = (esr >> 26) & 0x3fu;
     const uint64_t immediate = esr & 0xffffu;
-    if (exception_class != 0x15u) {
-        exception_handle(registers, 8u);
-    }
 
-    /* Legacy one-shot EL0 smoke-test exit. */
-    if (immediate == 0x0f02u) {
+    if (exception_class == 0x15u && immediate == 0x0f02u) {
+        /* Never let a scheduled process jump to the one-shot boot trampoline. */
+        if (fahim_scheduler_is_active()) {
+            console_write("EL0 process exit SVC: process ");
+            write_hex64(fahim_scheduler_current_pid());
+            console_write("\n");
+            fahim_scheduler_exit_current();
+        }
+
+        /* Legacy one-shot EL0 smoke-test exit. */
         const uint64_t return_pc = fahim_address_space_user_return_pc();
         if (return_pc == 0u || fahim_address_space_deactivate_current() != 0) {
             console_write("EL0 SVC: failed to restore kernel TTBR0\n");
@@ -172,9 +177,32 @@ void user_sync_handle(uint64_t *registers) {
     }
 
     /* SVC #0 is the initial AAPCS64 syscall ABI (x8 number, x0-x5 args). */
-    if (immediate == 0u && fahim_scheduler_is_active()) {
+    if (exception_class == 0x15u && immediate == 0u &&
+        fahim_scheduler_is_active()) {
         fahim_syscall_dispatch(registers);
         return;
+    }
+
+    if (fahim_scheduler_is_active()) {
+        uint64_t elr;
+        uint64_t far;
+        __asm__ volatile("mrs %0, ELR_EL1" : "=r"(elr));
+        __asm__ volatile("mrs %0, FAR_EL1" : "=r"(far));
+
+        console_write("EL0 fault: process ");
+        write_hex64(fahim_scheduler_current_pid());
+        console_write(" EC=");
+        write_hex64(exception_class);
+        console_write(" ESR=");
+        write_hex64(esr);
+        console_write(" ELR=");
+        write_hex64(elr);
+        console_write(" FAR=");
+        write_hex64(far);
+        console_write("\n");
+
+        /* A lower-EL fault kills only this process; other tasks keep running. */
+        fahim_scheduler_fault_current();
     }
 
     exception_handle(registers, 8u);
