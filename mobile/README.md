@@ -28,14 +28,17 @@ The proposed starting point is a small modular monolithic ARM64 kernel. The lang
 
 See [QEMU ARM64 platform plan](platforms/qemu-aarch64/README.md) and [kernel source and roadmap](kernel/README.md).
 
-### Implemented first milestone
+### Verified first milestone
 
-1. AArch64 freestanding entry point and bootstrap stack
-2. Device Tree (FDT) header and node/property parsing
-3. PL011 UART discovery from Device Tree
-4. Serial console initialization and kernel boot banner
+- AArch64 freestanding entry point and bootstrap stack
+- C kernel entry reached successfully
+- Device Tree (FDT) parsed
+- PL011 UART discovered from the Device Tree and initialized
+- Fahim OS ARM64 serial banner printed in QEMU
 
-The kernel has been compiled to an AArch64 ELF in a local cross-target check. GitHub Actions is now configured to build it with the GNU AArch64 toolchain, boot it in QEMU, and verify the serial output.
+The GitHub Actions run **Build Fahim OS ARM64 Kernel #6** completed successfully. It cross-compiled the kernel, booted it in QEMU, checked the serial output, and uploaded the ELF artifact.
+
+[Open successful ARM64 QEMU build](https://github.com/mrfahimhawladar/OS/actions/runs/42929151504)
 
 ### Next kernel milestones
 
@@ -72,9 +75,7 @@ The first ARM64 kernel is small enough for a cross-compilation CI job. A full na
 
 ## 7. Current status
 
-**Implemented:** ARM64 entry assembly, bootstrap stack, basic FDT reader, PL011 console initialization, and a serial kernel banner.
-
-**Verification:** local cross-target compile produced a 64-bit AArch64 ELF. GitHub Actions QEMU boot validation is pending.
+**Verified:** ARM64 entry assembly, bootstrap stack, FDT parser, PL011 console initialization, and QEMU serial boot banner.
 
 **Not implemented:** MMU, page allocator, interrupts, timer, scheduler, IPC, filesystem, graphics, lock screen, home screen, applications, and physical-phone drivers.
 
