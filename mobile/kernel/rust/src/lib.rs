@@ -1306,6 +1306,7 @@ pub extern "C" fn fahim_address_space_switch(next_handle: u32) -> i32 {
     0
 }
 
+#[no_mangle]
 pub extern "C" fn fahim_address_space_deactivate_current() -> i32 {
     let handle = ACTIVE_ADDRESS_SPACE_HANDLE.load(Ordering::Acquire);
     if handle == NO_ACTIVE_ADDRESS_SPACE {
