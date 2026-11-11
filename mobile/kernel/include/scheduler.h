@@ -19,6 +19,8 @@ uint64_t fahim_scheduler_current_pid(void);
 int fahim_scheduler_is_active(void);
 uint32_t fahim_scheduler_idle_wait_count(void);
 uint32_t fahim_scheduler_wakeup_count(void);
+uint32_t fahim_scheduler_user_fault_count(void);
+void fahim_scheduler_fault_current(void) __attribute__((noreturn));
 void fahim_scheduler_reset(void);
 
 #endif
