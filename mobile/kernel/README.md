@@ -10,7 +10,7 @@ This is the new ARM64 kernel implementation. The root-level x86 `kernel.cpp` is 
 - PL011 serial UART discovery via Device Tree `compatible` and `reg` properties
 - Polled serial text output
 
-The first target is QEMU's generic ARM64 `virt` platform. For bare-metal guests QEMU places its generated DTB at the start of RAM (0x40000000); the kernel image is linked at 0x40080000. The UART is discovered from the DTB rather than assuming a phone-specific hardware address.
+The first target is QEMU's generic ARM64 `virt` platform. QEMU places its bare-metal DTB at the start of RAM (0x40000000) and reserves a 1 MiB region for it. The kernel ELF is linked at 0x40200000 to keep the image clear of that reservation. The UART is discovered from the DTB rather than assuming a phone-specific hardware address.
 
 ## Build
 
@@ -26,8 +26,7 @@ Output:
 mobile/kernel/build/arm64-qemu/fahim-kernel.elf
 ```
 
-A CI workflow builds the kernel and attempts a QEMU serial-console smoke test:
-`.github/workflows/arm64-kernel.yml`.
+The `.github/workflows/arm64-kernel.yml` workflow builds the ELF and runs a QEMU serial-console smoke test.
 
 ## Important limits
 
