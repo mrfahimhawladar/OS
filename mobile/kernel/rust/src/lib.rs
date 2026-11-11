@@ -997,6 +997,20 @@ const USER_CODE_RO_X: El1Attributes = El1Attributes::VALID
     .union(El1Attributes::USER)
     .union(El1Attributes::PXN);
 
+const USER_DATA_RO_XN: El1Attributes = El1Attributes::VALID
+    .union(El1Attributes::ATTRIBUTE_INDEX_1)
+    .union(El1Attributes::INNER_SHAREABLE)
+    .union(El1Attributes::READ_ONLY)
+    .union(El1Attributes::ACCESSED)
+    .union(El1Attributes::NON_GLOBAL)
+    .union(El1Attributes::USER)
+    .union(El1Attributes::PXN)
+    .union(El1Attributes::UXN);
+
+const FAHIM_USER_PAGE_RW_XN: u32 = 0;
+const FAHIM_USER_PAGE_RO_X: u32 = 1;
+const FAHIM_USER_PAGE_RO_XN: u32 = 2;
+
 fn allocate_address_space_asid() -> Option<usize> {
     for asid in 2..ASID_COUNT {
         let word = &ASID_BITMAP[asid / 32];
@@ -1600,8 +1614,9 @@ pub extern "C" fn fahim_address_space_map_user_page(
         return -3;
     }
     let attributes = match permissions {
-        0 => USER_DATA_RW_XN,
-        1 => USER_CODE_RO_X,
+        FAHIM_USER_PAGE_RW_XN => USER_DATA_RW_XN,
+        FAHIM_USER_PAGE_RO_X => USER_CODE_RO_X,
+        FAHIM_USER_PAGE_RO_XN => USER_DATA_RO_XN,
         _ => return -4,
     };
     let end = virtual_address + PAGE_BYTES;
