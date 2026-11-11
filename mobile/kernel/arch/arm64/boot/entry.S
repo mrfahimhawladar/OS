@@ -151,6 +151,57 @@ fahim_relocate_high_half:
     ret
 .size fahim_relocate_high_half, . - fahim_relocate_high_half
 
+
+
+/*
+ * One-shot EL0 entry trampoline. The current address space is activated by
+ * Rust first. The exit SVC handler changes ELR_EL1/SPSR_EL1 to the resume
+ * label below, deactivates TTBR0 and returns here with the kernel stack intact.
+ */
+.global fahim_enter_user
+.type fahim_enter_user, %function
+fahim_enter_user:
+    stp     x19, x20, [sp, #-96]!
+    stp     x21, x22, [sp, #16]
+    stp     x23, x24, [sp, #32]
+    stp     x25, x26, [sp, #48]
+    stp     x27, x28, [sp, #64]
+    stp     x29, x30, [sp, #80]
+
+    mov     x19, x0                  /* user entry virtual address */
+    mov     x20, x1                  /* user stack top */
+    adr     x0, .Luser_return_resume
+    bl      fahim_address_space_set_user_return_pc
+    cbnz    w0, .Luser_enter_failed
+
+    msr     sp_el0, x20
+    msr     elr_el1, x19
+    movz    x9, #0x03c0              /* EL0t, all DAIF masks set */
+    msr     spsr_el1, x9
+    isb
+    eret
+
+.Luser_enter_failed:
+    ldp     x19, x20, [sp, #0]
+    ldp     x21, x22, [sp, #16]
+    ldp     x23, x24, [sp, #32]
+    ldp     x25, x26, [sp, #48]
+    ldp     x27, x28, [sp, #64]
+    ldp     x29, x30, [sp, #80]
+    add     sp, sp, #96
+    ret
+
+.Luser_return_resume:
+    ldp     x19, x20, [sp, #0]
+    ldp     x21, x22, [sp, #16]
+    ldp     x23, x24, [sp, #32]
+    ldp     x25, x26, [sp, #48]
+    ldp     x27, x28, [sp, #64]
+    ldp     x29, x30, [sp, #80]
+    add     sp, sp, #96
+    ret
+.size fahim_enter_user, . - fahim_enter_user
+
 .ltorg
 
 .section .text.vectors, "ax"
@@ -227,6 +278,28 @@ __exception_vectors:
     ldr     x30, [sp, #240]
     add     sp, sp, #256
     eret
+.elseif \number == 8
+    /* Lower-EL AArch64 SVC path; the handler selects the ELR/SPSR return. */
+    mov     x0, sp
+    bl      user_sync_handle
+    ldp     x0,  x1,  [sp, #0]
+    ldp     x2,  x3,  [sp, #16]
+    ldp     x4,  x5,  [sp, #32]
+    ldp     x6,  x7,  [sp, #48]
+    ldp     x8,  x9,  [sp, #64]
+    ldp     x10, x11, [sp, #80]
+    ldp     x12, x13, [sp, #96]
+    ldp     x14, x15, [sp, #112]
+    ldp     x16, x17, [sp, #128]
+    ldp     x18, x19, [sp, #144]
+    ldp     x20, x21, [sp, #160]
+    ldp     x22, x23, [sp, #176]
+    ldp     x24, x25, [sp, #192]
+    ldp     x26, x27, [sp, #208]
+    ldp     x28, x29, [sp, #224]
+    ldr     x30, [sp, #240]
+    add     sp, sp, #256
+    eret
 .else
     mov     x0, sp
     mov     x1, #\number
@@ -253,6 +326,19 @@ EXCEPTION_STUB 12
 EXCEPTION_STUB 13
 EXCEPTION_STUB 14
 EXCEPTION_STUB 15
+
+
+/* Tiny EL0 smoke payload: return a recognisable value through SVC #0xF02. */
+.section .rodata.user_test, "a"
+.balign 4
+.global __user_smoke_code_start
+.global __user_smoke_code_end
+__user_smoke_code_start:
+    movz    x0, #0xf00d
+    svc     #0xf02
+.Luser_smoke_wait:
+    b       .Luser_smoke_wait
+__user_smoke_code_end:
 
 .section .bss.stack, "aw", %nobits
 .align 12
