@@ -92,6 +92,64 @@ _start:
     b       .Lkernel_halt
 
 .size _start, . - _start
+
+/*
+ * Relocate the live EL1 execution context into the existing TTBR1 direct map.
+ * The physical image remains unchanged; only PC, SP, LR and VBAR are rebased.
+ * Both aliases remain mapped because the early kernel and current data pointers
+ * still use the lower identity window.
+ */
+.global fahim_relocate_high_half
+.type fahim_relocate_high_half, %function
+fahim_relocate_high_half:
+    movz    x9, #0xffff, lsl #48
+    and     x10, sp, x9
+    cmp     x10, x9
+    b.eq    .Lalready_high_half
+
+    /* Preserve the AAPCS64 callee-saved register set and the caller's LR. */
+    stp     x19, x20, [sp, #-96]!
+    stp     x21, x22, [sp, #16]
+    stp     x23, x24, [sp, #32]
+    stp     x25, x26, [sp, #48]
+    stp     x27, x28, [sp, #64]
+    stp     x29, x30, [sp, #80]
+
+    /* Switch SP to the same physical stack through its TTBR1 alias. */
+    add     x10, sp, x9
+    mov     sp, x10
+
+    /* Exception vectors must follow the kernel into the upper VA range. */
+    adrp    x11, __exception_vectors
+    add     x11, x11, :lo12:__exception_vectors
+    add     x11, x11, x9
+    msr     vbar_el1, x11
+    dsb     sy
+    ic      iallu
+    dsb     sy
+    isb
+
+    /* The C caller's return PC also needs the upper direct-map alias. */
+    add     x30, x30, x9
+    adr     x11, .Lhigh_half_resume
+    add     x11, x11, x9
+    br      x11
+
+.Lhigh_half_resume:
+    ldp     x19, x20, [sp, #0]
+    ldp     x21, x22, [sp, #16]
+    ldp     x23, x24, [sp, #32]
+    ldp     x25, x26, [sp, #48]
+    ldp     x27, x28, [sp, #64]
+    ldp     x29, x30, [sp, #80]
+    add     x30, x30, x9
+    add     sp, sp, #96
+    ret
+
+.Lalready_high_half:
+    ret
+.size fahim_relocate_high_half, . - fahim_relocate_high_half
+
 .ltorg
 
 .section .text.vectors, "ax"
