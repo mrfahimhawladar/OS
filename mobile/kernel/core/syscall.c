@@ -18,7 +18,7 @@ static void write_hex(uint64_t value) {
 static uint64_t syscall_exit(uint64_t status, uint64_t unused) {
     (void)status;
     (void)unused;
-    fahim_scheduler_exit_current();
+    fahim_scheduler_exit_current(status);
 }
 
 static uint64_t syscall_yield(uint64_t unused0, uint64_t unused1) {
@@ -64,6 +64,14 @@ void fahim_syscall_dispatch(uint64_t *saved_registers) {
     }
 
     const uint64_t number = saved_registers[8]; /* x8 */
+    if (number == FAHIM_SYS_WAITPID) {
+        int64_t exit_status = 0;
+        const int64_t child_pid =
+            fahim_scheduler_waitpid((uint32_t)saved_registers[0], &exit_status);
+        saved_registers[0] = (uint64_t)child_pid;
+        saved_registers[1] = (uint64_t)exit_status;
+        return;
+    }
     if (number >= (sizeof(syscall_table) / sizeof(syscall_table[0])) ||
         syscall_table[number] == NULL) {
         saved_registers[0] = (uint64_t)(int64_t)-38; /* -ENOSYS */
