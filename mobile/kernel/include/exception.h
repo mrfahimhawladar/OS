@@ -7,4 +7,7 @@
 void exception_handle(const uint64_t *registers, uint64_t vector)
     __attribute__((noreturn));
 
+/* Handles a current-EL SPx IRQ and returns to the interrupted context. */
+void irq_handle(void);
+
 #endif

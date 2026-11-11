@@ -9,6 +9,7 @@ crate-type = ["staticlib"]
 
 [dependencies]
 arm-gic = { version = "=0.10.0", default-features = false }
+arm-generic-timer = { version = "=0.3.1", default-features = false, features = ["el1"] }
 
 [profile.release]
 panic = "abort"

@@ -4,6 +4,7 @@
 #include "memory.h"
 #include "gicv3_platform.h"
 #include "gicv3_driver.h"
+#include "generic_timer.h"
 
 extern uint8_t __kernel_start[];
 extern uint8_t __kernel_end[];
@@ -69,6 +70,44 @@ static void console_write_gicv3(const gicv3_platform_info_t *gic) {
     }
 }
 
+static void run_timer_irq_self_test(void) {
+    const uint32_t expected_ticks = 5u;
+    const uint32_t interval_ms = 10u;
+
+    const int32_t timer_result = fahim_generic_timer_init(interval_ms);
+    if (timer_result != 0) {
+        console_write("ARM Generic Timer: initialization FAILED, code=");
+        console_write_hex64((uint64_t)(int64_t)timer_result);
+        console_write("\n");
+        halt_forever();
+    }
+
+    console_write("ARM Generic Timer: EL1 physical timer configured, interval ");
+    console_write_hex64(interval_ms);
+    console_write(" ms, counter frequency ");
+    console_write_hex64(fahim_generic_timer_frequency_hz());
+    console_write(" Hz\n");
+    console_write("IRQ Dispatcher: installed; enabling CPU IRQ delivery\n");
+
+    /* Unmask IRQ only; keep FIQ, SError and debug exceptions masked. */
+    __asm__ volatile("msr daifclr, #2\n\tisb" ::: "memory");
+
+    while (fahim_generic_timer_irq_count() < expected_ticks) {
+        __asm__ volatile("wfi" ::: "memory");
+    }
+
+    /* Stop accepting IRQs before the final shutdown/reporting path. */
+    __asm__ volatile("msr daifset, #2\n\tisb" ::: "memory");
+    fahim_generic_timer_stop();
+
+    if (fahim_generic_timer_irq_count() != expected_ticks) {
+        console_write("ARM Generic Timer IRQ test: FAIL (unexpected IRQ count)\n");
+        halt_forever();
+    }
+
+    console_write("ARM Generic Timer IRQ test: PASS (5 interrupts, PPI 30)\n");
+}
+
 void kernel_main(const void *dtb) {
     if (console_init_from_fdt(dtb) != 0) {
         halt_forever();
@@ -129,6 +168,7 @@ void kernel_main(const void *dtb) {
 
     console_write("GICv3 driver: initialized (arm-gic 0.10.0)\n");
     console_write("GICv3 Group 1: enabled for current CPU\n");
+    console_write("GICv3 timer PPI 30: enabled (level-triggered)\n");
     console_write("GICv3 CPU priority mask: ");
     const uint32_t priority_mask = fahim_gicv3_read_priority_mask();
     console_write_hex64(priority_mask);
@@ -138,7 +178,6 @@ void kernel_main(const void *dtb) {
         halt_forever();
     }
     console_write("GICv3 initialization self-test: PASS\n");
-    console_write("CPU IRQ delivery remains masked until dispatcher is installed\n");
 
     memory_layout_t layout;
     const int result = memory_layout_from_dtb(
@@ -174,6 +213,7 @@ void kernel_main(const void *dtb) {
     }
 
     console_write("\nMilestone 3: reserved memory exclusions.\n");
+    run_timer_irq_self_test();
 
 #ifdef FAHIM_EXCEPTION_SELFTEST
     console_write("Triggering controlled BRK exception...\n");
@@ -182,6 +222,6 @@ void kernel_main(const void *dtb) {
 #endif
 
     console_write("Milestone 4: exception vectors installed.\n");
-    console_write("Milestone 5A: GICv3 platform resources discovered.\n");
+    console_write("Milestone 5C: GICv3 IRQ dispatch and Generic Timer verified.\n");
     halt_forever();
 }

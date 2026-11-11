@@ -1,6 +1,8 @@
 #include <stdint.h>
 
 #include "exception.h"
+#include "gicv3_driver.h"
+#include "generic_timer.h"
 
 void console_write(const char *text);
 void console_putc(char character);
@@ -22,6 +24,32 @@ static void write_hex64(uint64_t value) {
     for (int shift = 60; shift >= 0; shift -= 4) {
         console_putc(digits[(value >> (uint32_t)shift) & 0x0fu]);
     }
+}
+
+/*
+ * Current EL SPx IRQ entry. The upstream GIC API performs IAR acknowledge
+ * and EOIR completion. The timer is re-armed before automatic EOI so its
+ * level-sensitive signal is deasserted first.
+ */
+void irq_handle(void) {
+    const uint32_t intid = fahim_gicv3_dispatch_irq();
+
+    if (intid == UINT32_MAX) {
+        /* GIC spurious/no-pending interrupt: nothing to deactivate. */
+        return;
+    }
+
+    if (intid == 30u) {
+        console_write("IRQ Dispatcher: handled timer PPI 30, tick ");
+        write_hex64(fahim_generic_timer_irq_count());
+        console_write("\n");
+        return;
+    }
+
+    console_write("IRQ Dispatcher: unexpected interrupt INTID ");
+    write_hex64(intid);
+    console_write("\n");
+    exception_halt();
 }
 
 static const char *vector_name(uint64_t vector) {

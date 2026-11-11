@@ -41,7 +41,7 @@ jobs:
           aarch64-linux-gnu-readelf -s mobile/kernel/build/arm64-qemu/fahim-kernel.elf | grep -E '__kernel_(start|end)|__exception_vectors'
           aarch64-linux-gnu-size mobile/kernel/build/arm64-qemu/fahim-kernel.elf
 
-      - name: Boot kernel in QEMU and verify memory exclusions
+      - name: Boot kernel in QEMU and verify memory, GIC and timer IRQs
         shell: bash
         run: |
           set +e
@@ -72,16 +72,18 @@ jobs:
           grep -q "GICR base: 0x00000000080a0000" qemu-arm64.log
           grep -q "GICv3 driver: initialized (arm-gic 0.10.0)" qemu-arm64.log
           grep -q "GICv3 Group 1: enabled for current CPU" qemu-arm64.log
+          grep -q "GICv3 timer PPI 30: enabled (level-triggered)" qemu-arm64.log
           grep -q "GICv3 CPU priority mask:" qemu-arm64.log
           grep -q "GICv3 initialization self-test: PASS" qemu-arm64.log
-          grep -q "CPU IRQ delivery remains masked until dispatcher is installed" qemu-arm64.log
           grep -q "Memory layout: validated" qemu-arm64.log
           grep -q "RAM region base: 0x0000000040000000 size: 0x0000000020000000 bytes" qemu-arm64.log
           grep -q "Reserved region base: 0x0000000040000000" qemu-arm64.log
           grep -q "Reserved region base: 0x0000000040200000" qemu-arm64.log
           grep -q "Usable region base: 0x0000000040100000" qemu-arm64.log
-          grep -q "Milestone 3: reserved memory exclusions." qemu-arm64.log
-          grep -q "Milestone 5A: GICv3 platform resources discovered." qemu-arm64.log
+          grep -q "IRQ Dispatcher: installed; enabling CPU IRQ delivery" qemu-arm64.log
+          grep -q "IRQ Dispatcher: handled timer PPI 30" qemu-arm64.log
+          grep -q "ARM Generic Timer IRQ test: PASS (5 interrupts, PPI 30)" qemu-arm64.log
+          grep -q "Milestone 5C: GICv3 IRQ dispatch and Generic Timer verified." qemu-arm64.log
 
       - name: Build controlled exception self-test kernel
         run: make -C mobile/kernel CROSS_COMPILE=aarch64-linux-gnu- EXCEPTION_SELFTEST=1
@@ -107,6 +109,7 @@ jobs:
             echo "QEMU exception test exited unexpectedly: $qemu_status"
             exit "$qemu_status"
           fi
+          grep -q "ARM Generic Timer IRQ test: PASS (5 interrupts, PPI 30)" qemu-exception.log
           grep -q "Triggering controlled BRK exception" qemu-exception.log
           grep -q "Exception vector: current EL SPx synchronous" qemu-exception.log
           grep -q "ESR_EL1:" qemu-exception.log
