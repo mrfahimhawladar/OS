@@ -103,7 +103,8 @@ _start:
 .type fahim_relocate_high_half, %function
 fahim_relocate_high_half:
     movz    x9, #0xffff, lsl #48
-    and     x10, sp, x9
+    add     x10, sp, #0
+    and     x10, x10, x9
     cmp     x10, x9
     b.eq    .Lalready_high_half
 
