@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install AArch64 toolchain and QEMU
         run: |
@@ -61,7 +61,7 @@ jobs:
           grep -q "PL011 UART: initialized from Device Tree" qemu-arm64.log
 
       - name: Upload ARM64 kernel ELF
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: fahim-os-arm64-kernel
           path: mobile/kernel/build/arm64-qemu/fahim-kernel.elf
