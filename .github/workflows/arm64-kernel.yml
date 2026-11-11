@@ -1,0 +1,68 @@
+name: Build Fahim OS ARM64 Kernel
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - "mobile/kernel/**"
+      - "mobile/platforms/qemu-aarch64/**"
+      - ".github/workflows/arm64-kernel.yml"
+  pull_request:
+    branches: [ main ]
+    paths:
+      - "mobile/kernel/**"
+      - "mobile/platforms/qemu-aarch64/**"
+      - ".github/workflows/arm64-kernel.yml"
+  workflow_dispatch:
+
+jobs:
+  arm64-kernel:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install AArch64 toolchain and QEMU
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu qemu-system-arm
+
+      - name: Build freestanding ARM64 kernel
+        run: make -C mobile/kernel CROSS_COMPILE=aarch64-linux-gnu-
+
+      - name: Inspect ELF
+        run: |
+          aarch64-linux-gnu-readelf -h mobile/kernel/build/arm64-qemu/fahim-kernel.elf
+          aarch64-linux-gnu-size mobile/kernel/build/arm64-qemu/fahim-kernel.elf
+
+      - name: Boot kernel in QEMU and verify serial banner
+        shell: bash
+        run: |
+          set +e
+          timeout 6s qemu-system-aarch64 \
+            -machine virt \
+            -cpu cortex-a57 \
+            -m 512M \
+            -nographic \
+            -monitor none \
+            -serial stdio \
+            -no-reboot \
+            -device loader,file=mobile/kernel/build/arm64-qemu/fahim-kernel.elf,cpu-num=0 \
+            > qemu-arm64.log 2>&1
+          qemu_status=$?
+          set -e
+          cat qemu-arm64.log
+          if [ "$qemu_status" -ne 124 ] && [ "$qemu_status" -ne 0 ]; then
+            echo "QEMU exited unexpectedly: $qemu_status"
+            exit "$qemu_status"
+          fi
+          grep -q "FAHIM OS ARM64" qemu-arm64.log
+          grep -q "Device Tree: parsed" qemu-arm64.log
+          grep -q "PL011 UART: initialized from Device Tree" qemu-arm64.log
+
+      - name: Upload ARM64 kernel ELF
+        uses: actions/upload-artifact@v4
+        with:
+          name: fahim-os-arm64-kernel
+          path: mobile/kernel/build/arm64-qemu/fahim-kernel.elf
+          if-no-files-found: error
