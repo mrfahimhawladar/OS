@@ -51,3 +51,15 @@ Fahim OS consumes the published crate; its allocator implementation is not copie
 - Scope: 4 KiB stage-1 page tables, EL1&0 translation regime, mapping descriptor flags and TTBR activation.
 
 Fahim OS uses the upstream Mapping API with a custom no-heap Translation implementation backed by frame-alloc. The crate source is not copied into this repository. The upstream README states that this is not an officially supported Google product. Fahim OS's QEMU validation is independent and limited to its single-core identity-map reference configuration.
+
+
+## AArch64 context-switching reference: mini-rtos
+
+- Project: KNCn23 / mini-rtos
+- Source: https://github.com/KNCn23/mini-rtos
+- Referenced files: kernel/task.h, kernel/sched.c, kernel/context_switch.S
+- Used by: the initial Fahim OS AArch64 round-robin context-switch implementation in mobile/kernel/core/scheduler.c and mobile/kernel/arch/arm64/boot/context_switch.S
+- License information: the upstream README states MIT; a standalone LICENSE file was not present in the inspected upstream default-branch tree.
+- Scope: AArch64 callee-saved register/SP context layout, first-task stack setup, simple round-robin task selection, and register save/restore assembly.
+
+Fahim OS adapts this small context-switch/scheduler foundation to its own EL0 trap frames and ASID-managed TTBR0 address spaces. It does not import the unrelated mini-rtos drivers or task data model. The syscall table and TTBR0 integration are Fahim OS code.
