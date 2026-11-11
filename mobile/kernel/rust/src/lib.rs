@@ -1408,16 +1408,25 @@ pub extern "C" fn fahim_address_space_self_test() -> i32 {
     let free_a_ok = unsafe { fahim_page_allocator_free(page_a, 1) } == 0;
     let free_b_ok = unsafe { fahim_page_allocator_free(page_b, 1) } == 0;
 
-    if asids_are_distinct && code_map_ok && data_map_ok && duplicate_rejected
-        && space_a_code_ok && space_b_data_ok && unmap_a_ok && space_a_empty
-        && space_b_still_mapped && remap_a_ok && remap_a_verified
-        && unmap_b_ok && unmap_remap_a_ok && destroy_a_ok && destroy_b_ok
-        && free_a_ok && free_b_ok
-    {
-        0
-    } else {
-        -5
-    }
+    // Keep failures distinguishable in the QEMU serial log.
+    if !asids_are_distinct { return -10; }
+    if !code_map_ok { return -11; }
+    if !data_map_ok { return -12; }
+    if !duplicate_rejected { return -13; }
+    if !space_a_code_ok { return -14; }
+    if !space_b_data_ok { return -15; }
+    if !unmap_a_ok { return -16; }
+    if !space_a_empty { return -17; }
+    if !space_b_still_mapped { return -18; }
+    if !remap_a_ok { return -19; }
+    if !remap_a_verified { return -20; }
+    if !unmap_b_ok { return -21; }
+    if !unmap_remap_a_ok { return -22; }
+    if !destroy_a_ok { return -23; }
+    if !destroy_b_ok { return -24; }
+    if !free_a_ok { return -25; }
+    if !free_b_ok { return -26; }
+    0
 }
 
 #[panic_handler]
