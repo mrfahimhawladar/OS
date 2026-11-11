@@ -8,6 +8,8 @@
 #include "page_allocator.h"
 #include "mmu.h"
 #include "address_space.h"
+#include "scheduler.h"
+#include "scheduler.h"
 #include "console.h"
 
 extern uint8_t __kernel_start[];
@@ -19,6 +21,10 @@ extern uint8_t __rodata_end[];
 extern uint8_t __exception_vectors[];
 extern const uint32_t __user_smoke_code_start[];
 extern const uint32_t __user_smoke_code_end[];
+extern const uint32_t __user_process_code_start[];
+extern const uint32_t __user_process_code_end[];
+extern const uint32_t __user_process_code_start[];
+extern const uint32_t __user_process_code_end[];
 extern uint64_t fahim_enter_user(uint64_t user_entry, uint64_t user_stack_top);
 
 int console_init_from_fdt(const void *dtb);
@@ -341,6 +347,82 @@ static void run_user_mode_self_test(void) {
     console_write("EL0 User Mode self-test: PASS (EL0 execution, SVC return, TTBR0 restore)\n");
 }
 
+static void run_process_scheduler_self_test(void) {
+    const size_t code_size =
+        (uintptr_t)__user_process_code_end - (uintptr_t)__user_process_code_start;
+    if (code_size == 0u || code_size > 4096u || (code_size & 3u) != 0u) {
+        console_write("Process Scheduler self-test: FAIL (user payload size)\n");
+        halt_forever();
+    }
+
+    const uint64_t code_page = fahim_page_allocator_alloc(1u);
+    const uint64_t stack_page_a = fahim_page_allocator_alloc(1u);
+    const uint64_t stack_page_b = fahim_page_allocator_alloc(1u);
+    if (code_page == UINT64_MAX || stack_page_a == UINT64_MAX ||
+        stack_page_b == UINT64_MAX) {
+        console_write("Process Scheduler self-test: FAIL (physical frame allocation)\n");
+        halt_forever();
+    }
+
+    /* Copy into the TTBR1 direct-map alias; keep the user code page shared RO+X. */
+    const uintptr_t code_alias =
+        (uintptr_t)0xffff000000000000ull + (uintptr_t)code_page;
+    volatile uint32_t *destination = (volatile uint32_t *)code_alias;
+    const uint32_t *source = __user_process_code_start;
+    for (size_t index = 0; index < code_size / sizeof(uint32_t); ++index) {
+        destination[index] = source[index];
+    }
+    synchronize_user_code_cache(code_alias, code_alias, code_size);
+
+    const uint32_t space_a = fahim_address_space_create();
+    const uint32_t space_b = fahim_address_space_create();
+    if (space_a == UINT32_MAX || space_b == UINT32_MAX) {
+        console_write("Process Scheduler self-test: FAIL (address-space creation)\n");
+        halt_forever();
+    }
+
+    const uint64_t user_code_va = 0x0000000100200000ull;
+    const uint64_t user_stack_va = 0x0000000100400000ull;
+    if (fahim_address_space_map_user_page(
+            space_a, user_code_va, code_page, FAHIM_USER_PAGE_RO_X) != 0 ||
+        fahim_address_space_map_user_page(
+            space_a, user_stack_va, stack_page_a, FAHIM_USER_PAGE_RW_XN) != 0 ||
+        fahim_address_space_map_user_page(
+            space_b, user_code_va, code_page, FAHIM_USER_PAGE_RO_X) != 0 ||
+        fahim_address_space_map_user_page(
+            space_b, user_stack_va, stack_page_b, FAHIM_USER_PAGE_RW_XN) != 0) {
+        console_write("Process Scheduler self-test: FAIL (user mapping)\n");
+        halt_forever();
+    }
+
+    if (fahim_scheduler_create_user(
+            space_a, user_code_va, user_stack_va + 4096u, 101u) < 0 ||
+        fahim_scheduler_create_user(
+            space_b, user_code_va, user_stack_va + 4096u, 202u) < 0) {
+        console_write("Process Scheduler self-test: FAIL (task creation)\n");
+        halt_forever();
+    }
+
+    console_write("Process Scheduler: starting two EL0 tasks\n");
+    fahim_scheduler_start();
+    if (fahim_scheduler_is_active()) {
+        console_write("Process Scheduler self-test: FAIL (scheduler did not return)\n");
+        halt_forever();
+    }
+
+    fahim_scheduler_reset();
+    if (fahim_address_space_destroy(space_a) != 0 ||
+        fahim_address_space_destroy(space_b) != 0 ||
+        fahim_page_allocator_free(code_page, 1u) != 0 ||
+        fahim_page_allocator_free(stack_page_a, 1u) != 0 ||
+        fahim_page_allocator_free(stack_page_b, 1u) != 0) {
+        console_write("Process Scheduler self-test: FAIL (cleanup)\n");
+        halt_forever();
+    }
+
+    console_write("Process Scheduler self-test: PASS (two EL0 tasks, round-robin yield, TTBR0 switching, syscalls, exit)\n");
+}
+
 static void run_timer_irq_self_test(void) {
     const uint32_t expected_ticks = 5u;
     const uint32_t interval_ms = 10u;
@@ -487,6 +569,7 @@ void kernel_main(const void *dtb) {
     run_page_allocator_self_test(&layout);
     run_mmu_self_test(&layout, &gic);
     run_timer_irq_self_test();
+    run_process_scheduler_self_test();
 
 #ifdef FAHIM_EXCEPTION_SELFTEST
     console_write("Triggering controlled BRK exception...\n");

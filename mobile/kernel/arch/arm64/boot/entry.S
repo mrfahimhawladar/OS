@@ -235,11 +235,15 @@ __exception_vectors:
     VECTOR_ENTRY .Lexception_vector_15
 .size __exception_vectors, . - __exception_vectors
 
-/* Save x0-x30 in a 16-byte-aligned 256-byte frame before calling C. */
+/*
+ * Trap frame: x0-x30 plus ELR_EL1, SPSR_EL1 and SP_EL0.
+ * Keeping the system return state on each task's kernel stack is essential:
+ * a scheduler switch may suspend one EL0 exception and resume another later.
+ */
 .macro EXCEPTION_STUB number
 .Lexception_vector_\number:
     msr     daifset, #0xf
-    sub     sp, sp, #256
+    sub     sp, sp, #288
     stp     x0,  x1,  [sp, #0]
     stp     x2,  x3,  [sp, #16]
     stp     x4,  x5,  [sp, #32]
@@ -257,49 +261,20 @@ __exception_vectors:
     stp     x28, x29, [sp, #224]
     str     x30, [sp, #240]
 
-.if \number == 5
-    /* IRQ handlers return through this frame and ERET restores SPSR_EL1. */
+    mrs     x9, elr_el1
+    str     x9, [sp, #248]
+    mrs     x9, spsr_el1
+    str     x9, [sp, #256]
+    mrs     x9, sp_el0
+    str     x9, [sp, #264]
+
+.if \number == 5 || \number == 9
+    /* Current-EL and lower-EL IRQs share the GIC/timer dispatch path. */
     bl      irq_handle
-    ldp     x0,  x1,  [sp, #0]
-    ldp     x2,  x3,  [sp, #16]
-    ldp     x4,  x5,  [sp, #32]
-    ldp     x6,  x7,  [sp, #48]
-    ldp     x8,  x9,  [sp, #64]
-    ldp     x10, x11, [sp, #80]
-    ldp     x12, x13, [sp, #96]
-    ldp     x14, x15, [sp, #112]
-    ldp     x16, x17, [sp, #128]
-    ldp     x18, x19, [sp, #144]
-    ldp     x20, x21, [sp, #160]
-    ldp     x22, x23, [sp, #176]
-    ldp     x24, x25, [sp, #192]
-    ldp     x26, x27, [sp, #208]
-    ldp     x28, x29, [sp, #224]
-    ldr     x30, [sp, #240]
-    add     sp, sp, #256
-    eret
 .elseif \number == 8
-    /* Lower-EL AArch64 SVC path; the handler selects the ELR/SPSR return. */
+    /* Lower-EL AArch64 synchronous entry (SVC/syscall dispatch). */
     mov     x0, sp
     bl      user_sync_handle
-    ldp     x0,  x1,  [sp, #0]
-    ldp     x2,  x3,  [sp, #16]
-    ldp     x4,  x5,  [sp, #32]
-    ldp     x6,  x7,  [sp, #48]
-    ldp     x8,  x9,  [sp, #64]
-    ldp     x10, x11, [sp, #80]
-    ldp     x12, x13, [sp, #96]
-    ldp     x14, x15, [sp, #112]
-    ldp     x16, x17, [sp, #128]
-    ldp     x18, x19, [sp, #144]
-    ldp     x20, x21, [sp, #160]
-    ldp     x22, x23, [sp, #176]
-    ldp     x24, x25, [sp, #192]
-    ldp     x26, x27, [sp, #208]
-    ldp     x28, x29, [sp, #224]
-    ldr     x30, [sp, #240]
-    add     sp, sp, #256
-    eret
 .else
     mov     x0, sp
     mov     x1, #\number
@@ -308,8 +283,34 @@ __exception_vectors:
     wfe
     b       .Lexception_stub_halt_\number
 .endif
-.endm
 
+    /* Restore the return state belonging to this saved task frame. */
+    ldr     x9, [sp, #248]
+    msr     elr_el1, x9
+    ldr     x9, [sp, #256]
+    msr     spsr_el1, x9
+    ldr     x9, [sp, #264]
+    msr     sp_el0, x9
+
+    ldp     x0,  x1,  [sp, #0]
+    ldp     x2,  x3,  [sp, #16]
+    ldp     x4,  x5,  [sp, #32]
+    ldp     x6,  x7,  [sp, #48]
+    ldp     x8,  x9,  [sp, #64]
+    ldp     x10, x11, [sp, #80]
+    ldp     x12, x13, [sp, #96]
+    ldp     x14, x15, [sp, #112]
+    ldp     x16, x17, [sp, #128]
+    ldp     x18, x19, [sp, #144]
+    ldp     x20, x21, [sp, #160]
+    ldp     x22, x23, [sp, #176]
+    ldp     x24, x25, [sp, #192]
+    ldp     x26, x27, [sp, #208]
+    ldp     x28, x29, [sp, #224]
+    ldr     x30, [sp, #240]
+    add     sp, sp, #288
+    eret
+.endm
 EXCEPTION_STUB 0
 EXCEPTION_STUB 1
 EXCEPTION_STUB 2
@@ -339,6 +340,34 @@ __user_smoke_code_start:
 .Luser_smoke_wait:
     b       .Luser_smoke_wait
 __user_smoke_code_end:
+
+/* Two-process EL0 payload for the scheduler/SVC integration test.
+ * SYS_GETPID=3, SYS_LOG=4, SYS_YIELD=2, SYS_EXIT=1, SVC immediate=0.
+ * Both processes map this same read-only executable page into their own TTBR0.
+ */
+.balign 4
+.global __user_process_code_start
+.global __user_process_code_end
+__user_process_code_start:
+    movz    x8, #3
+    svc     #0                  /* x0 = process id */
+    movz    x1, #0xa
+    movz    x8, #4
+    svc     #0                  /* log first marker */
+    movz    x8, #2
+    svc     #0                  /* yield to the other process */
+    movz    x8, #3
+    svc     #0                  /* get pid again after resuming */
+    movz    x1, #0xb
+    movz    x8, #4
+    svc     #0                  /* log second marker */
+    movz    x0, #0
+    movz    x8, #1
+    svc     #0                  /* exit */
+.Luser_process_halt:
+    wfe
+    b       .Luser_process_halt
+__user_process_code_end:
 
 .section .bss.stack, "aw", %nobits
 .align 12

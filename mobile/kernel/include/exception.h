@@ -11,6 +11,6 @@ void exception_handle(const uint64_t *registers, uint64_t vector)
 void irq_handle(void);
 
 /* Handles lower-EL AArch64 synchronous exceptions, including the test SVC. */
-void user_sync_handle(const uint64_t *registers);
+void user_sync_handle(uint64_t *registers);
 
 #endif
