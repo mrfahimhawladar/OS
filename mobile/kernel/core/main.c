@@ -155,8 +155,8 @@ static void run_mmu_self_test(const memory_layout_t *layout,
     }
 
     volatile uint64_t *probe = (volatile uint64_t *)(uintptr_t)page;
-    *probe = 0x4d4d_5541_524d_3634ull;
-    const int memory_ok = *probe == 0x4d4d_5541_524d_3634ull;
+    *probe = 0x4d4d5541524d3634ull;
+    const int memory_ok = *probe == 0x4d4d5541524d3634ull;
     const int32_t free_result = fahim_page_allocator_free(page, 1u);
     if (!memory_ok || free_result != 0) {
         console_write("MMU self-test: FAIL (identity RAM access)\n");
