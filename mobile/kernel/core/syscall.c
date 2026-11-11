@@ -34,6 +34,12 @@ static uint64_t syscall_getpid(uint64_t unused0, uint64_t unused1) {
     return fahim_scheduler_current_pid();
 }
 
+static uint64_t syscall_sleep(uint64_t milliseconds, uint64_t unused) {
+    (void)unused;
+    const int result = fahim_scheduler_sleep_current(milliseconds);
+    return (uint64_t)(int64_t)result;
+}
+
 static uint64_t syscall_log(uint64_t pid, uint64_t marker) {
     console_write("EL0 process ");
     write_hex(pid);
@@ -49,6 +55,7 @@ static const syscall_handler_t syscall_table[] = {
     [FAHIM_SYS_YIELD] = syscall_yield,
     [FAHIM_SYS_GETPID] = syscall_getpid,
     [FAHIM_SYS_LOG] = syscall_log,
+    [FAHIM_SYS_SLEEP] = syscall_sleep,
 };
 
 void fahim_syscall_dispatch(uint64_t *saved_registers) {
