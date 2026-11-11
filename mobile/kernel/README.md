@@ -147,7 +147,18 @@ A parent that exits or faults before collecting children reparents them to the k
 
 QEMU now creates four tasks: parent PID 101, child PID 202, independent sleeper PID 404 and faulting PID 303. The parent blocks in WAITPID; child 202 sleeps 30 ms and exits with status 42; the parent checks both returned PID and status before exiting. PID 404 independently sleeps 50 ms. PID 303 faults on a read-only code page and is terminated without stopping the other tasks. CI checks the parent's post-WAITPID marker, two idle waits/wakeups, one isolated fault, one successful WAITPID and four address-space reaps in both boot variants.
 
-The current WAITPID ABI returns the child's PID in x0 and exit status in x1; it does not yet copy a POSIX status pointer to user memory. Task slots are fixed-size and are reset for a new scheduler run; runtime task creation/slot reuse, signals, process groups and full user-memory pointer validation remain future work.
+The WAITPID ABI uses x0 for the child PID (or zero for any child) and x1 for an optional user status pointer. On success the child PID is returned in x0 and a POSIX-compatible wait status is copied to the validated writable user buffer. Task slots are fixed-size and are reset for a new scheduler run; runtime task creation/slot reuse, signals, process groups and full user-memory pointer validation remain future work.
+
+
+## Milestone 7F: checked user-copy and syscall memory boundaries
+
+The address-space bridge now validates each EL0 page covered by a user buffer before copying. Validation checks overflow, the permitted user VA window, a live level-3 mapping, the EL0 USER permission and, for copy-out, that the page is writable. Copies are performed through the shared TTBR1 direct-map alias rather than dereferencing the caller's TTBR0 virtual pointer in EL1. Transfers are capped at 64 KiB per bridge operation.
+
+The initial SYS_WRITE service reads at most 256 bytes from a checked user buffer into a kernel stack buffer before printing to the QEMU console. Invalid/unmapped/kernel-half pointers return EFAULT and are not dereferenced. WAITPID now accepts an optional writable user status pointer; it validates the pointer before blocking, encodes a normal exit or signalled status in the POSIX wait-status format, and copies that value back through the checked copy-to-user path.
+
+QEMU verifies a successful read from the user code page containing "Fahim", rejection of a kernel-half pointer, rejection of a read-only code page as a WAITPID output pointer, then successful WAITPID status copy-out to a writable shared data page. The parent verifies the copied status value 0x2A00 (normal exit code 42) before logging its post-WAITPID marker. CI checks these paths in production and exception-test boot variants.
+
+This is a checked memory-copy foundation, not a full POSIX file-descriptor implementation. SYS_WRITE currently targets the serial console and has a 256-byte service limit; C-string helpers, arbitrary-length I/O, partial-copy recovery, exception-table fixups, demand paging and a complete VFS-backed read/write interface remain future work.
 
 ## Reference platform and verification
 
@@ -180,7 +191,7 @@ Exception-test image: mobile/kernel/build/arm64-qemu-exception-test/fahim-kernel
 ## Next milestones
 
 1. Add runtime process creation, task-slot reuse, signals and process groups
-2. Add checked copy-in/copy-out, syscall pointer validation, user demand paging and fault retry
+2. Add demand paging, fault retry and complete VFS-backed read/write semantics
 3. Add ELF64 loader/exec, per-process user stack/TLS and a stable syscall ABI
 4. Add kernel heap, memory zones, allocator reclamation and SMP-safe page allocation/TLB shootdown
 5. Add storage, VFS, block-device and filesystem layers
