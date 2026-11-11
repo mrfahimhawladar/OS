@@ -6,7 +6,7 @@
 
 Develop a portable OS core first, then add hardware-specific ports separately.
 
-The first engineering target is a **virtual ARM64 reference machine (QEMU `virt`)**. This is not a commercial smartphone emulator; it lets us implement and test the ARM64 kernel, memory, exceptions, timer, scheduler, storage and input interfaces without depending on one phone's firmware.
+The first engineering target is a **virtual ARM64 reference machine (QEMU `virt` )**. This is not a commercial smartphone emulator; it lets us implement and test the ARM64 kernel, memory, exceptions, timer, scheduler, storage and input interfaces without depending on one phone's firmware.
 
 After the core stabilizes, individual smartphone Board Support Packages (BSPs) can be added. A POCO X6 Neo / `gold` port is optional future work, not the definition of Fahim OS.
 
@@ -28,7 +28,7 @@ The proposed starting point is a small modular monolithic ARM64 kernel. The lang
 
 See [QEMU ARM64 platform plan](platforms/qemu-aarch64/README.md) and [kernel source and roadmap](kernel/README.md).
 
-### Verified first milestone
+### Verified milestone 1: ARM64 boot + serial console
 
 - AArch64 freestanding entry point and bootstrap stack
 - C kernel entry reached successfully
@@ -36,17 +36,22 @@ See [QEMU ARM64 platform plan](platforms/qemu-aarch64/README.md) and [kernel sou
 - PL011 UART discovered from the Device Tree and initialized
 - Fahim OS ARM64 serial banner printed in QEMU
 
-The GitHub Actions run **Build Fahim OS ARM64 Kernel #6** completed successfully. It cross-compiled the kernel, booted it in QEMU, checked the serial output, and uploaded the ELF artifact.
+### Verified milestone 2: FDT RAM discovery
 
-[Open successful ARM64 QEMU build](https://github.com/mrfahimhawladar/OS/actions/runs/42929151504)
+- Enabled Device Tree memory nodes are read using the parent bus cell counts
+- RAM address and size tuples are decoded with overflow and malformed-range checks
+- QEMU CI confirms the 512 MiB RAM range: base `0x40000000`, size `0x20000000`
+- The kernel prints the discovered RAM region over the serial console
+
+The [successful ARM64 QEMU run](https://github.com/mrfahimhawladar/OS/actions/runs/42929915828) cross-compiled the ELF, booted it in QEMU, checked the RAM base and size, and uploaded the kernel artifact.
 
 ### Next kernel milestones
 
-1. Validate FDT memory nodes and create a physical memory map
+1. Parse reserved-memory and kernel/DTB reservations into an explicit reserved-region map
 2. Add exception vectors and safe exception reporting
 3. Add the GIC and generic timer
-4. Add physical page allocator and MMU
-5. Add scheduler, threads, and context switching
+4. Implement a physical page allocator that only uses verified free RAM
+5. Add MMU/page tables, then scheduler and context switching
 6. Add IPC, VFS, and a RAM filesystem
 7. Add generic input, display, and storage driver interfaces
 
@@ -75,8 +80,10 @@ The first ARM64 kernel is small enough for a cross-compilation CI job. A full na
 
 ## 7. Current status
 
-**Verified:** ARM64 entry assembly, bootstrap stack, FDT parser, PL011 console initialization, and QEMU serial boot banner.
+**Verified:** ARM64 entry assembly, bootstrap stack, FDT-based PL011 console initialization, FDT RAM discovery, and QEMU serial boot test.
 
-**Not implemented:** MMU, page allocator, interrupts, timer, scheduler, IPC, filesystem, graphics, lock screen, home screen, applications, and physical-phone drivers.
+**Not implemented:** reserved-memory exclusions, page allocator, MMU, interrupts, timer, scheduler, IPC, filesystem, graphics, lock screen, home screen, applications, and physical-phone drivers.
+
+The reported RAM map is informational only. The kernel does not allocate memory from it yet.
 
 The existing root-level x86 files and `preview.html` are a separate learning prototype. They are not Fahim OS Mobile.
