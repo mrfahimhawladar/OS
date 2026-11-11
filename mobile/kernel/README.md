@@ -53,7 +53,7 @@ Third-party source and licensing details are recorded in THIRD_PARTY_NOTICES.md.
 
 The kernel integrates upstream frame-alloc 0.1.0, a dependency-free no_std physical frame allocator. Fahim OS supplies the boot memory map as sorted, non-overlapping, 4 KiB-aligned usable ranges. The upstream SummaryBuddyAllocator keeps its bitmap in usable RAM, preserves every gap/reservation, and supports contiguous naturally-aligned frame allocations without a heap.
 
-The Rust bridge uses an identity physical-memory provenance adapter only while SCTLR_EL1.M is clear. Initialization fails closed if the MMU is already enabled; the adapter must be replaced with a direct-map/page-table-aware implementation when MMU support is introduced. QEMU self-tests allocate one 4 KiB page and one contiguous four-page block, verify alignment and that both remain inside registered usable ranges, write/read physical memory, free both allocations, allocate again, and confirm free capacity is restored.
+The Rust bridge uses an identity physical-memory provenance adapter. Allocator initialization still occurs before MMU enable, when the initial usable RAM ranges are identity-addressable and the allocator bitmap can be safely placed. After MMU enable, the kernel TTBR0 mapping deliberately retains supervisor-only identity aliases for usable RAM, so page-table frames and other kernel-owned frames remain accessible through EL1 while address spaces are prepared. QEMU self-tests allocate one 4 KiB page and one contiguous four-page block, verify alignment and that both remain inside registered usable ranges, write/read physical memory, free both allocations, allocate again, and confirm free capacity is restored.
 
 The upstream crate is version 0.1.0 and explicitly marks its API unstable. Its published documentation reports Miri, concurrency, and audit testing, but its kernel demo is x86-64; ARM integration is not claimed upstream. Fahim OS validates this integration separately on the ARM64 QEMU reference machine. SMP, interrupt-time allocation, and physical-phone memory mapping are not yet claimed.
 
@@ -72,6 +72,17 @@ The upstream page-table crate is MIT OR Apache-2.0 and is not an officially supp
 The kernel builds a second upstream aarch64-paging Mapping for VaRange::Upper and installs it through TTBR1. It maps discovered RAM at 0xffff_0000_0000_0000 + physical_address, and maps discovered GIC/PL011 windows using Device-nGnRnE attributes. Kernel text and rodata retain the same RO/X and RO/XN permissions across both aliases. TCR_EL1.EPD1 is cleared so TTBR1 table walks are enabled.
 
 A QEMU self-test allocates a physical page, writes and reads a pattern through the high-half alias, then releases the frame. TTBR0's lower identity map remains active for the current boot PC and stack. This is a verified high-half direct-map alias, not yet a relocated high-half kernel or an EL0 process-address-space implementation.
+
+
+## Milestone 6D: EL0 address-space lifecycle
+
+The kernel now provides a small address-space manager on top of the pinned upstream aarch64-paging 0.12.3 implementation. It creates independent TTBR0 lower-VA page tables with unique, reusable ASIDs and generation-tagged handles. Every new root preserves the current supervisor-only low identity map for RAM and Device MMIO, including the kernel text/rodata permissions, while the existing TTBR1 high-half direct map remains shared.
+
+The first user mapping API supports 4 KiB EL0 pages with either read/write + execute-never data permissions or read-only executable code permissions. User virtual addresses are restricted to a separate 4 GiB–1 TiB range and checked against all kernel RAM/MMIO identity ranges. Unmapping uses the upstream page-table crate's invalid-descriptor mapping path; empty subtables are compacted. Destroying an inactive address space returns its page-table frames and releases its ASID. Mapped data frames remain caller-owned.
+
+QEMU tests create two address spaces, map the same virtual address to different physical pages with different EL0 permissions, reject a duplicate mapping, unmap one space while verifying the other remains intact, remap, destroy both spaces, and verify the user frames can be returned to the physical allocator.
+
+This milestone prepares independent page tables; it does not yet activate a user address space, enter EL0, provide a process stack/context switch, or prove user-mode execution. Those require the kernel to relocate its active PC/stack to the high-half mapping and add the EL0 exception-return/scheduler path. SMP TLB shootdown is not implemented.
 
 ## Reference platform and verification
 
@@ -103,8 +114,8 @@ Exception-test image: mobile/kernel/build/arm64-qemu-exception-test/fahim-kernel
 
 ## Next milestones
 
-1. Relocate kernel execution and stack to the high-half mapping; add explicit mapping lifecycle/permission APIs
-2. Add EL0 address spaces, user/kernel isolation and TLB invalidation
+1. Relocate kernel execution and stack to the high-half mapping; add EL0 entry and context switching
+2. Add address-space activation, TLB invalidation and process stack management
 3. Add allocator zones and SMP-safe page allocator publication with TLB shootdown
 4. Add scheduler and context switching
 5. Add storage, input, display and touchscreen driver frameworks

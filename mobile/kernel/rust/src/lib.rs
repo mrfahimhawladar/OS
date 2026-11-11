@@ -13,7 +13,7 @@ use arm_generic_timer::{
 };
 use frame_alloc::{AllocatorStats, PageSize, PhysRange, PhysicalAllocator, Provenance, RegionInit, SummaryBuddyAllocator};
 use aarch64_paging::{
-    descriptor::{El1Attributes, PhysicalAddress},
+    descriptor::{Descriptor, El1Attributes, PhysicalAddress},
     mair::{Mair, MairAttribute, NormalMemory},
     paging::{Constraints, El1And0, MemoryRegion, PageTable, Translation, VaRange},
     Mapping,
@@ -222,10 +222,12 @@ struct CMemoryRegion {
 struct IdentityPhysicalMemory;
 
 /*
- * The initial QEMU boot path runs with SCTLR_EL1.M clear, so physical RAM is
- * identity-addressable. Use the same opaque provenance technique documented
- * by the upstream crate's kernel demo; a plain integer-to-pointer cast is not
- * sufficient for Rust's pointer model.
+ * Kernel-owned RAM frames remain identity-addressable through the active
+ * supervisor-only TTBR0 mappings. Every process address space built here
+ * retains that same low identity map, so page-table frames remain accessible
+ * while mappings are prepared but inactive. Use the opaque provenance
+ * technique documented by the upstream crate's kernel demo; a plain integer-
+ * to-pointer cast is not sufficient for Rust's pointer model.
  */
 unsafe impl Provenance for IdentityPhysicalMemory {
     unsafe fn create(phys: usize) -> NonNull<u8> {
@@ -511,7 +513,8 @@ impl Translation<El1Attributes> for KernelTranslation {
         let physical = PAGE_ALLOCATOR
             .allocate_physical(PAGE_SIZE, core::num::NonZeroUsize::new(1).unwrap())
             .unwrap_or_else(|_| panic!("out of physical pages for page tables"));
-        // SAFETY: the allocator transfers this exclusive 4 KiB frame; the MMU is still off.
+        // SAFETY: the allocator transfers this exclusive 4 KiB frame. The
+        // active kernel TTBR0 keeps usable RAM identity-mapped for EL1 access.
         let pointer = unsafe { IdentityPhysicalMemory::create(physical) }
             .cast::<PageTable<El1Attributes>>();
         // SAFETY: a new frame is exclusively owned; an all-zero PageTable is valid.
@@ -790,6 +793,28 @@ pub extern "C" fn fahim_mmu_init(
         );
     }
 
+    for index in 0..ram_count {
+        KERNEL_RAM_BASES[index].store(
+            usize::try_from(ram[index].base).unwrap(), Ordering::Relaxed
+        );
+        KERNEL_RAM_LENGTHS[index].store(
+            usize::try_from(ram[index].size).unwrap(), Ordering::Relaxed
+        );
+    }
+    KERNEL_RAM_REGION_COUNT.store(ram_count, Ordering::Relaxed);
+    for index in 0..device_count {
+        KERNEL_DEVICE_BASES[index].store(
+            usize::try_from(devices[index].base).unwrap(), Ordering::Relaxed
+        );
+        KERNEL_DEVICE_LENGTHS[index].store(
+            usize::try_from(devices[index].size).unwrap(), Ordering::Relaxed
+        );
+    }
+    KERNEL_DEVICE_REGION_COUNT.store(device_count, Ordering::Relaxed);
+    KERNEL_TEXT_START.store(text_start, Ordering::Relaxed);
+    KERNEL_TEXT_END.store(text_end, Ordering::Relaxed);
+    KERNEL_RODATA_START.store(rodata_start, Ordering::Relaxed);
+    KERNEL_RODATA_END.store(rodata_end, Ordering::Relaxed);
     MMU_INITIALIZED.store(true, Ordering::Release);
     0
 }
@@ -851,6 +876,561 @@ pub extern "C" fn fahim_mmu_high_alias_self_test() -> i32 {
 
         if valid { 0 } else { -4 }
     }
+}
+
+
+/*
+ * User address-space lifecycle.
+ *
+ * Each TTBR0 mapping gets a distinct ASID and an isolated EL0 virtual range.
+ * The low identity aliases for RAM and device MMIO are retained with
+ * supervisor-only permissions so the current low-linked kernel, its stack,
+ * page allocator and exception paths remain usable. TTBR1 continues to hold
+ * the shared high-half kernel direct map. These mappings are prepared but are
+ * not activated until the kernel has a dedicated EL0 entry/context-switch path.
+ */
+const ADDRESS_SPACE_CAPACITY: usize = 4;
+const USER_VA_START: usize = 0x0000_0001_0000_0000; // 4 GiB
+const USER_VA_LIMIT: usize = 0x0000_0100_0000_0000; // 1 TiB, exclusive
+const ADDRESS_SPACE_FREE: u32 = 0;
+const ADDRESS_SPACE_BUILDING: u32 = 1;
+const ADDRESS_SPACE_READY: u32 = 2;
+const ADDRESS_SPACE_BUSY: u32 = 3;
+const ADDRESS_SPACE_DESTROYING: u32 = 4;
+const ADDRESS_SPACE_HANDLE_INDEX_MASK: u32 = 0xff;
+const ADDRESS_SPACE_HANDLE_GENERATION_MASK: u32 = 0x00ff_ffff;
+const ASID_COUNT: usize = 256;
+const ASID_BITMAP_WORDS: usize = ASID_COUNT / 32;
+const DEVICE_RANGE_CAPACITY: usize = 8;
+
+struct AddressSpaceSlot {
+    state: AtomicU32,
+    generation: AtomicU32,
+    asid: AtomicUsize,
+    mapping: UnsafeCell<MaybeUninit<KernelMapping>>,
+}
+
+impl AddressSpaceSlot {
+    const fn new() -> Self {
+        Self {
+            state: AtomicU32::new(ADDRESS_SPACE_FREE),
+            generation: AtomicU32::new(0),
+            asid: AtomicUsize::new(0),
+            mapping: UnsafeCell::new(MaybeUninit::uninit()),
+        }
+    }
+}
+
+// SAFETY: slot state is acquired with atomic compare_exchange before its
+// UnsafeCell is accessed. This early kernel is single-core and has no scheduler.
+unsafe impl Sync for AddressSpaceSlot {}
+
+static ADDRESS_SPACES: [AddressSpaceSlot; ADDRESS_SPACE_CAPACITY] =
+    [const { AddressSpaceSlot::new() }; ADDRESS_SPACE_CAPACITY];
+
+// ASID 0 is reserved; ASID 1 belongs to the boot/kernel mapping.
+static ASID_BITMAP: [AtomicU32; ASID_BITMAP_WORDS] = [
+    AtomicU32::new(0b11),
+    AtomicU32::new(0),
+    AtomicU32::new(0),
+    AtomicU32::new(0),
+    AtomicU32::new(0),
+    AtomicU32::new(0),
+    AtomicU32::new(0),
+    AtomicU32::new(0),
+];
+
+static KERNEL_RAM_REGION_COUNT: AtomicUsize = AtomicUsize::new(0);
+static KERNEL_RAM_BASES: [AtomicUsize; PAGE_RANGE_CAPACITY] =
+    [const { AtomicUsize::new(0) }; PAGE_RANGE_CAPACITY];
+static KERNEL_RAM_LENGTHS: [AtomicUsize; PAGE_RANGE_CAPACITY] =
+    [const { AtomicUsize::new(0) }; PAGE_RANGE_CAPACITY];
+static KERNEL_DEVICE_REGION_COUNT: AtomicUsize = AtomicUsize::new(0);
+static KERNEL_DEVICE_BASES: [AtomicUsize; DEVICE_RANGE_CAPACITY] =
+    [const { AtomicUsize::new(0) }; DEVICE_RANGE_CAPACITY];
+static KERNEL_DEVICE_LENGTHS: [AtomicUsize; DEVICE_RANGE_CAPACITY] =
+    [const { AtomicUsize::new(0) }; DEVICE_RANGE_CAPACITY];
+static KERNEL_TEXT_START: AtomicUsize = AtomicUsize::new(0);
+static KERNEL_TEXT_END: AtomicUsize = AtomicUsize::new(0);
+static KERNEL_RODATA_START: AtomicUsize = AtomicUsize::new(0);
+static KERNEL_RODATA_END: AtomicUsize = AtomicUsize::new(0);
+
+const USER_DATA_RW_XN: El1Attributes = El1Attributes::VALID
+    .union(El1Attributes::ATTRIBUTE_INDEX_1)
+    .union(El1Attributes::INNER_SHAREABLE)
+    .union(El1Attributes::ACCESSED)
+    .union(El1Attributes::NON_GLOBAL)
+    .union(El1Attributes::USER)
+    .union(El1Attributes::PXN)
+    .union(El1Attributes::UXN);
+
+const USER_CODE_RO_X: El1Attributes = El1Attributes::VALID
+    .union(El1Attributes::ATTRIBUTE_INDEX_1)
+    .union(El1Attributes::INNER_SHAREABLE)
+    .union(El1Attributes::READ_ONLY)
+    .union(El1Attributes::ACCESSED)
+    .union(El1Attributes::NON_GLOBAL)
+    .union(El1Attributes::USER)
+    .union(El1Attributes::PXN);
+
+fn allocate_address_space_asid() -> Option<usize> {
+    for asid in 2..ASID_COUNT {
+        let word = &ASID_BITMAP[asid / 32];
+        let mask = 1u32 << (asid % 32);
+        if word.fetch_or(mask, Ordering::AcqRel) & mask == 0 {
+            return Some(asid);
+        }
+    }
+    None
+}
+
+fn release_address_space_asid(asid: usize) {
+    if asid < 2 || asid >= ASID_COUNT {
+        return;
+    }
+    let word = &ASID_BITMAP[asid / 32];
+    let mask = 1u32 << (asid % 32);
+    word.fetch_and(!mask, Ordering::AcqRel);
+}
+
+fn encode_address_space_handle(index: usize, generation: u32) -> u32 {
+    ((generation & ADDRESS_SPACE_HANDLE_GENERATION_MASK) << 8) | (index as u32 + 1)
+}
+
+fn decode_address_space_handle(handle: u32) -> Option<(usize, u32)> {
+    let encoded_index = (handle & ADDRESS_SPACE_HANDLE_INDEX_MASK) as usize;
+    let generation = handle >> 8;
+    if encoded_index == 0 || encoded_index > ADDRESS_SPACE_CAPACITY || generation == 0 {
+        return None;
+    }
+    Some((encoded_index - 1, generation))
+}
+
+fn with_address_space_mut<R>(
+    handle: u32,
+    operation: impl FnOnce(&mut KernelMapping) -> R,
+) -> Result<R, i32> {
+    let Some((index, generation)) = decode_address_space_handle(handle) else {
+        return Err(-1);
+    };
+    let slot = &ADDRESS_SPACES[index];
+    if slot.generation.load(Ordering::Acquire) != generation {
+        return Err(-1);
+    }
+    if slot.state.compare_exchange(
+        ADDRESS_SPACE_READY,
+        ADDRESS_SPACE_BUSY,
+        Ordering::AcqRel,
+        Ordering::Acquire,
+    ).is_err() {
+        return Err(-2);
+    }
+
+    // SAFETY: READY -> BUSY grants this caller exclusive access to the slot.
+    let mapping = unsafe { (&mut *slot.mapping.get()).assume_init_mut() };
+    let result = operation(mapping);
+    slot.state.store(ADDRESS_SPACE_READY, Ordering::Release);
+    Ok(result)
+}
+
+fn map_kernel_identity_into_space(mapping: &mut KernelMapping) -> Result<(), i32> {
+    let ram_count = KERNEL_RAM_REGION_COUNT.load(Ordering::Acquire);
+    if ram_count == 0 || ram_count > PAGE_RANGE_CAPACITY {
+        return Err(-1);
+    }
+
+    for index in 0..ram_count {
+        let base = KERNEL_RAM_BASES[index].load(Ordering::Relaxed);
+        let size = KERNEL_RAM_LENGTHS[index].load(Ordering::Relaxed);
+        map_identity_range(mapping, base, size, NORMAL_RW_XN).map_err(|_| -2)?;
+    }
+
+    let device_count = KERNEL_DEVICE_REGION_COUNT.load(Ordering::Acquire);
+    if device_count == 0 || device_count > DEVICE_RANGE_CAPACITY {
+        return Err(-3);
+    }
+    for index in 0..device_count {
+        let base = KERNEL_DEVICE_BASES[index].load(Ordering::Relaxed);
+        let size = KERNEL_DEVICE_LENGTHS[index].load(Ordering::Relaxed);
+        map_identity_range(mapping, base, size, DEVICE_XN).map_err(|_| -4)?;
+    }
+
+    let text_start = KERNEL_TEXT_START.load(Ordering::Relaxed);
+    let text_end = KERNEL_TEXT_END.load(Ordering::Relaxed);
+    let rodata_start = KERNEL_RODATA_START.load(Ordering::Relaxed);
+    let rodata_end = KERNEL_RODATA_END.load(Ordering::Relaxed);
+    if map_identity_range(mapping, text_start, text_end - text_start, NORMAL_CODE_RO).is_err() {
+        return Err(-5);
+    }
+    if map_identity_range(mapping, rodata_start, rodata_end - rodata_start, NORMAL_RO_XN).is_err() {
+        return Err(-6);
+    }
+    Ok(())
+}
+
+fn create_address_space_mapping(asid: usize) -> Result<KernelMapping, i32> {
+    // TTBR0 uses the lower 48-bit VA range; TTBR1 remains the shared kernel map.
+    let mut mapping = Mapping::with_asid_and_va_range(
+        KernelTranslation::new(),
+        asid,
+        0,
+        El1And0,
+        VaRange::Lower,
+    );
+    map_kernel_identity_into_space(&mut mapping)?;
+    Ok(mapping)
+}
+
+fn user_virtual_page_is_safe(virtual_address: usize) -> bool {
+    let Some(end) = virtual_address.checked_add(PAGE_BYTES) else {
+        return false;
+    };
+    if virtual_address < USER_VA_START || end > USER_VA_LIMIT {
+        return false;
+    }
+
+    // Do not let a process replace any low identity RAM or Device MMIO mapping
+    // that the EL1 kernel relies on while it is running.
+    let ram_count = KERNEL_RAM_REGION_COUNT.load(Ordering::Acquire);
+    for index in 0..ram_count {
+        let base = KERNEL_RAM_BASES[index].load(Ordering::Relaxed);
+        let length = KERNEL_RAM_LENGTHS[index].load(Ordering::Relaxed);
+        let Some(region_end) = base.checked_add(length) else { return false; };
+        if virtual_address < region_end && base < end {
+            return false;
+        }
+    }
+
+    let device_count = KERNEL_DEVICE_REGION_COUNT.load(Ordering::Acquire);
+    for index in 0..device_count {
+        let base = KERNEL_DEVICE_BASES[index].load(Ordering::Relaxed);
+        let length = KERNEL_DEVICE_LENGTHS[index].load(Ordering::Relaxed);
+        let Some(region_end) = base.checked_add(length) else { return false; };
+        if virtual_address < region_end && base < end {
+            return false;
+        }
+    }
+    true
+}
+
+fn address_space_page_matches(
+    mapping: &KernelMapping,
+    virtual_address: usize,
+    physical_address: usize,
+    executable_read_only: bool,
+) -> bool {
+    let Some(end) = virtual_address.checked_add(PAGE_BYTES) else {
+        return false;
+    };
+    let range = MemoryRegion::new(virtual_address, end);
+    let mut matched = false;
+    let result = mapping.walk_range(&range, &mut |_, descriptor, level| {
+        if level == 3 && descriptor.is_valid() && descriptor.is_table_or_page() {
+            let flags = descriptor.flags();
+            let base_flags = El1Attributes::USER
+                .union(El1Attributes::NON_GLOBAL)
+                .union(El1Attributes::ACCESSED);
+            let permission_flags = if executable_read_only {
+                El1Attributes::READ_ONLY.union(El1Attributes::PXN)
+            } else {
+                El1Attributes::PXN.union(El1Attributes::UXN)
+            };
+            let forbidden_flags = if executable_read_only {
+                El1Attributes::UXN
+            } else {
+                El1Attributes::READ_ONLY
+            };
+            matched = descriptor.output_address().0 == physical_address
+                && flags.contains(base_flags.union(permission_flags))
+                && !flags.contains(forbidden_flags);
+        }
+        Ok(())
+    });
+    result.is_ok() && matched
+}
+
+fn address_space_page_is_mapped(mapping: &KernelMapping, virtual_address: usize) -> bool {
+    let Some(end) = virtual_address.checked_add(PAGE_BYTES) else {
+        return false;
+    };
+    let range = MemoryRegion::new(virtual_address, end);
+    let mut mapped = false;
+    let result = mapping.walk_range(&range, &mut |_, descriptor, level| {
+        if level == 3 && descriptor.is_valid() && descriptor.is_table_or_page() {
+            mapped = true;
+        }
+        Ok(())
+    });
+    result.is_ok() && mapped
+}
+
+#[no_mangle]
+pub extern "C" fn fahim_address_space_create() -> u32 {
+    if !MMU_INITIALIZED.load(Ordering::Acquire) {
+        return u32::MAX;
+    }
+
+    for (index, slot) in ADDRESS_SPACES.iter().enumerate() {
+        if slot.state.compare_exchange(
+            ADDRESS_SPACE_FREE,
+            ADDRESS_SPACE_BUILDING,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        ).is_err() {
+            continue;
+        }
+
+        let Some(asid) = allocate_address_space_asid() else {
+            slot.state.store(ADDRESS_SPACE_FREE, Ordering::Release);
+            return u32::MAX;
+        };
+        let mapping = match create_address_space_mapping(asid) {
+            Ok(mapping) => mapping,
+            Err(_) => {
+                release_address_space_asid(asid);
+                slot.state.store(ADDRESS_SPACE_FREE, Ordering::Release);
+                return u32::MAX;
+            }
+        };
+
+        let mut generation = slot.generation.load(Ordering::Relaxed)
+            .wrapping_add(1) & ADDRESS_SPACE_HANDLE_GENERATION_MASK;
+        if generation == 0 {
+            generation = 1;
+        }
+        slot.generation.store(generation, Ordering::Relaxed);
+        slot.asid.store(asid, Ordering::Relaxed);
+        // SAFETY: BUILDING reserves the slot and the previous mapping was dropped.
+        unsafe { (*slot.mapping.get()).write(mapping); }
+        slot.state.store(ADDRESS_SPACE_READY, Ordering::Release);
+        return encode_address_space_handle(index, generation);
+    }
+    u32::MAX
+}
+
+#[no_mangle]
+pub extern "C" fn fahim_address_space_asid(handle: u32) -> u32 {
+    let Some((index, generation)) = decode_address_space_handle(handle) else {
+        return u32::MAX;
+    };
+    let slot = &ADDRESS_SPACES[index];
+    if slot.generation.load(Ordering::Acquire) != generation
+        || slot.state.load(Ordering::Acquire) != ADDRESS_SPACE_READY
+    {
+        return u32::MAX;
+    }
+    slot.asid.load(Ordering::Acquire) as u32
+}
+
+/// Map one caller-owned, allocated physical page into a process EL0 range.
+/// permissions: 0 = user RW/XN data, 1 = user RO/X code.
+#[no_mangle]
+pub extern "C" fn fahim_address_space_map_user_page(
+    handle: u32,
+    virtual_address: u64,
+    physical_address: u64,
+    permissions: u32,
+) -> i32 {
+    if !MMU_INITIALIZED.load(Ordering::Acquire) {
+        return -1;
+    }
+    let (Ok(virtual_address), Ok(physical_address)) = (
+        usize::try_from(virtual_address),
+        usize::try_from(physical_address),
+    ) else {
+        return -2;
+    };
+    if virtual_address & PAGE_MASK != 0
+        || physical_address & PAGE_MASK != 0
+        || !user_virtual_page_is_safe(virtual_address)
+        || !page_is_usable(physical_address, PAGE_BYTES)
+    {
+        return -3;
+    }
+    let attributes = match permissions {
+        0 => USER_DATA_RW_XN,
+        1 => USER_CODE_RO_X,
+        _ => return -4,
+    };
+    let end = virtual_address + PAGE_BYTES;
+    match with_address_space_mut(handle, |mapping| {
+        // Mapping must be explicit: do not silently replace an existing page.
+        if address_space_page_is_mapped(mapping, virtual_address) {
+            return false;
+        }
+        mapping.map_range(
+            &MemoryRegion::new(virtual_address, end),
+            PhysicalAddress(physical_address),
+            attributes,
+            Constraints::empty(),
+        ).is_ok()
+    }) {
+        Ok(true) => 0,
+        Ok(false) => -5,
+        Err(error) => error,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn fahim_address_space_unmap_user_page(
+    handle: u32,
+    virtual_address: u64,
+) -> i32 {
+    let Ok(virtual_address) = usize::try_from(virtual_address) else {
+        return -1;
+    };
+    if virtual_address & PAGE_MASK != 0 || !user_virtual_page_is_safe(virtual_address) {
+        return -2;
+    }
+    let end = virtual_address + PAGE_BYTES;
+    match with_address_space_mut(handle, |mapping| {
+        if !address_space_page_is_mapped(mapping, virtual_address) {
+            return false;
+        }
+        if mapping.map_range(
+            &MemoryRegion::new(virtual_address, end),
+            PhysicalAddress(0),
+            El1Attributes::empty(),
+            Constraints::empty(),
+        ).is_err() {
+            return false;
+        }
+        mapping.compact_subtables();
+        true
+    }) {
+        Ok(true) => 0,
+        Ok(false) => -3,
+        Err(error) => error,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn fahim_address_space_destroy(handle: u32) -> i32 {
+    let Some((index, generation)) = decode_address_space_handle(handle) else {
+        return -1;
+    };
+    let slot = &ADDRESS_SPACES[index];
+    if slot.generation.load(Ordering::Acquire) != generation {
+        return -1;
+    }
+    if slot.state.compare_exchange(
+        ADDRESS_SPACE_READY,
+        ADDRESS_SPACE_DESTROYING,
+        Ordering::AcqRel,
+        Ordering::Acquire,
+    ).is_err() {
+        return -2;
+    }
+
+    // Never drop a translation while a CPU is using its TTBR0.
+    let active = unsafe { (&*slot.mapping.get()).assume_init_ref().active() };
+    if active {
+        slot.state.store(ADDRESS_SPACE_READY, Ordering::Release);
+        return -3;
+    }
+    let asid = slot.asid.load(Ordering::Relaxed);
+    // SAFETY: DESTROYING gives this caller exclusive access; the mapping is inactive.
+    unsafe { (&mut *slot.mapping.get()).assume_init_drop(); }
+    release_address_space_asid(asid);
+    slot.asid.store(0, Ordering::Relaxed);
+    slot.state.store(ADDRESS_SPACE_FREE, Ordering::Release);
+    0
+}
+
+/// QEMU coverage for separate ASIDs, EL0 permission flags, independent
+/// mappings at the same VA, unmap/remap and page-table destruction.
+#[no_mangle]
+pub extern "C" fn fahim_address_space_self_test() -> i32 {
+    if !MMU_INITIALIZED.load(Ordering::Acquire) {
+        return -1;
+    }
+
+    let space_a = fahim_address_space_create();
+    if space_a == u32::MAX {
+        return -2;
+    }
+    let space_b = fahim_address_space_create();
+    if space_b == u32::MAX {
+        let _ = fahim_address_space_destroy(space_a);
+        return -3;
+    }
+
+    let page_a = fahim_page_allocator_alloc(1);
+    let page_b = fahim_page_allocator_alloc(1);
+    if page_a == u64::MAX || page_b == u64::MAX {
+        let _ = fahim_address_space_destroy(space_a);
+        let _ = fahim_address_space_destroy(space_b);
+        if page_a != u64::MAX {
+            // SAFETY: page_a is the exact live one-page allocation above.
+            unsafe { let _ = fahim_page_allocator_free(page_a, 1); }
+        }
+        if page_b != u64::MAX {
+            // SAFETY: page_b is the exact live one-page allocation above.
+            unsafe { let _ = fahim_page_allocator_free(page_b, 1); }
+        }
+        return -4;
+    }
+
+    const TEST_VA: u64 = (USER_VA_START as u64) + 0x20_0000;
+    let asids_are_distinct = fahim_address_space_asid(space_a) != u32::MAX
+        && fahim_address_space_asid(space_b) != u32::MAX
+        && fahim_address_space_asid(space_a) != fahim_address_space_asid(space_b);
+    let code_map_ok =
+        fahim_address_space_map_user_page(space_a, TEST_VA, page_a, 1) == 0;
+    let data_map_ok =
+        fahim_address_space_map_user_page(space_b, TEST_VA, page_b, 0) == 0;
+    let duplicate_rejected =
+        fahim_address_space_map_user_page(space_a, TEST_VA, page_b, 0) != 0;
+
+    let space_a_code_ok = with_address_space_mut(space_a, |mapping| {
+        address_space_page_matches(mapping, TEST_VA as usize, page_a as usize, true)
+    }).unwrap_or(false);
+    let space_b_data_ok = with_address_space_mut(space_b, |mapping| {
+        address_space_page_matches(mapping, TEST_VA as usize, page_b as usize, false)
+    }).unwrap_or(false);
+
+    let unmap_a_ok = fahim_address_space_unmap_user_page(space_a, TEST_VA) == 0;
+    let space_a_empty = with_address_space_mut(space_a, |mapping| {
+        !address_space_page_is_mapped(mapping, TEST_VA as usize)
+    }).unwrap_or(false);
+    let space_b_still_mapped = with_address_space_mut(space_b, |mapping| {
+        address_space_page_matches(mapping, TEST_VA as usize, page_b as usize, false)
+    }).unwrap_or(false);
+
+    let remap_a_ok =
+        fahim_address_space_map_user_page(space_a, TEST_VA, page_a, 0) == 0;
+    let remap_a_verified = with_address_space_mut(space_a, |mapping| {
+        address_space_page_matches(mapping, TEST_VA as usize, page_a as usize, false)
+    }).unwrap_or(false);
+    let unmap_b_ok = fahim_address_space_unmap_user_page(space_b, TEST_VA) == 0;
+    let unmap_remap_a_ok = fahim_address_space_unmap_user_page(space_a, TEST_VA) == 0;
+
+    let destroy_a_ok = fahim_address_space_destroy(space_a) == 0;
+    let destroy_b_ok = fahim_address_space_destroy(space_b) == 0;
+    // SAFETY: both pages are the exact live allocations returned above. Page
+    // table destruction does not take ownership of the mapped data frames.
+    let free_a_ok = unsafe { fahim_page_allocator_free(page_a, 1) } == 0;
+    let free_b_ok = unsafe { fahim_page_allocator_free(page_b, 1) } == 0;
+
+    // Keep failures distinguishable in the QEMU serial log.
+    if !asids_are_distinct { return -10; }
+    if !code_map_ok { return -11; }
+    if !data_map_ok { return -12; }
+    if !duplicate_rejected { return -13; }
+    if !space_a_code_ok { return -14; }
+    if !space_b_data_ok { return -15; }
+    if !unmap_a_ok { return -16; }
+    if !space_a_empty { return -17; }
+    if !space_b_still_mapped { return -18; }
+    if !remap_a_ok { return -19; }
+    if !remap_a_verified { return -20; }
+    if !unmap_b_ok { return -21; }
+    if !unmap_remap_a_ok { return -22; }
+    if !destroy_a_ok { return -23; }
+    if !destroy_b_ok { return -24; }
+    if !free_a_ok { return -25; }
+    if !free_b_ok { return -26; }
+    0
 }
 
 #[panic_handler]
