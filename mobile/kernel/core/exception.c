@@ -3,6 +3,7 @@
 #include "exception.h"
 #include "gicv3_driver.h"
 #include "generic_timer.h"
+#include "address_space.h"
 
 void console_write(const char *text);
 void console_putc(char character);
@@ -130,4 +131,37 @@ void exception_handle(const uint64_t *registers, uint64_t vector) {
 
     console_write("Fatal exception: CPU halted.\n");
     exception_halt();
+}
+
+
+/*
+ * Lower-EL AArch64 synchronous entry. The current smoke test exits through
+ * SVC #0xF02; other exceptions remain fatal until process fault handling exists.
+ */
+void user_sync_handle(const uint64_t *registers) {
+    uint64_t esr;
+    __asm__ volatile("mrs %0, ESR_EL1" : "=r"(esr));
+
+    const uint64_t exception_class = (esr >> 26) & 0x3fu;
+    const uint64_t immediate = esr & 0xffffu;
+    if (exception_class != 0x15u || immediate != 0x0f02u) {
+        exception_handle(registers, 8u);
+    }
+
+    const uint64_t return_pc = fahim_address_space_user_return_pc();
+    if (return_pc == 0u || fahim_address_space_deactivate_current() != 0) {
+        console_write("EL0 SVC: failed to restore kernel TTBR0\n");
+        exception_halt();
+    }
+
+    /* Resume the saved kernel trampoline in EL1h with all IRQ masks set. */
+    const uint64_t return_spsr = 0x3c5u;
+    __asm__ volatile(
+        "msr ELR_EL1, %0\n\t"
+        "msr SPSR_EL1, %1\n\t"
+        "isb"
+        :
+        : "r"(return_pc), "r"(return_spsr)
+        : "memory"
+    );
 }
