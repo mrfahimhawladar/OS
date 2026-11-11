@@ -3,6 +3,9 @@
 
 #include "memory.h"
 
+extern uint8_t __kernel_start[];
+extern uint8_t __kernel_end[];
+
 int console_init_from_fdt(const void *dtb);
 void console_write(const char *text);
 void console_putc(char character);
@@ -22,6 +25,16 @@ static void console_write_hex64(uint64_t value) {
     }
 }
 
+static void console_write_region(const char *label,
+                                 const memory_region_t *region) {
+    console_write(label);
+    console_write(" base: ");
+    console_write_hex64(region->base);
+    console_write(" size: ");
+    console_write_hex64(region->size);
+    console_write(" bytes\n");
+}
+
 void kernel_main(const void *dtb) {
     if (console_init_from_fdt(dtb) != 0) {
         halt_forever();
@@ -36,27 +49,39 @@ void kernel_main(const void *dtb) {
     console_write("PL011 UART: initialized from Device Tree\n");
     console_write("Platform: QEMU virt (ARM64 reference target)\n");
 
-    memory_region_t regions[MEMORY_MAP_MAX_REGIONS];
-    size_t region_count = 0;
-    const int memory_result = fdt_memory_map_from_dtb(
-        dtb, regions, MEMORY_MAP_MAX_REGIONS, &region_count);
+    memory_layout_t layout;
+    const int result = memory_layout_from_dtb(
+        dtb, (uintptr_t)__kernel_start, (uintptr_t)__kernel_end, &layout);
 
-    if (memory_result != 0) {
-        console_write("FDT memory map: FAILED, code=");
-        console_write_hex64((uint64_t)(int64_t)memory_result);
+    if (result != 0) {
+        console_write("Memory layout: FAILED, code=");
+        console_write_hex64((uint64_t)(int64_t)result);
         console_write("\n");
         halt_forever();
     }
 
-    console_write("FDT memory map: detected\n");
-    for (size_t i = 0; i < region_count; ++i) {
-        console_write("RAM region base: ");
-        console_write_hex64(regions[i].base);
-        console_write("\nRAM region size: ");
-        console_write_hex64(regions[i].size);
-        console_write(" bytes\n");
+    console_write("Memory layout: validated\n");
+    console_write("RAM regions: ");
+    console_write_hex64(layout.ram_count);
+    console_write("\n");
+    for (size_t i = 0; i < layout.ram_count; ++i) {
+        console_write_region("RAM region", &layout.ram[i]);
     }
 
-    console_write("\nMilestone 2: FDT RAM discovery.\n");
+    console_write("Reserved regions: ");
+    console_write_hex64(layout.reserved_count);
+    console_write("\n");
+    for (size_t i = 0; i < layout.reserved_count; ++i) {
+        console_write_region("Reserved region", &layout.reserved[i]);
+    }
+
+    console_write("Usable regions: ");
+    console_write_hex64(layout.usable_count);
+    console_write("\n");
+    for (size_t i = 0; i < layout.usable_count; ++i) {
+        console_write_region("Usable region", &layout.usable[i]);
+    }
+
+    console_write("\nMilestone 3: reserved memory exclusions.\n");
     halt_forever();
 }
