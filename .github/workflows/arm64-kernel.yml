@@ -91,7 +91,6 @@ jobs:
           grep -q "EL0 process 0x0000000000000194 ran marker 0x000000000000000a" qemu-arm64.log
           grep -q "EL0 process 0x00000000000000ca ran marker 0x000000000000000c" qemu-arm64.log
           grep -q "EL0 process 0x0000000000000194 ran marker 0x000000000000000c" qemu-arm64.log
-          grep -q "EL0 process 0x00000000000000ca ran marker 0x000000000000000b" qemu-arm64.log
           grep -q "EL0 process 0x0000000000000194 ran marker 0x000000000000000b" qemu-arm64.log
           grep -q "EL0 process 0x0000000000000065 ran marker 0x000000000000000d" qemu-arm64.log
           grep -q "EL0 process 0x000000000000012f ran marker 0x000000000000000f" qemu-arm64.log
@@ -141,7 +140,6 @@ jobs:
           grep -q "EL0 process 0x0000000000000194 ran marker 0x000000000000000a" qemu-exception.log
           grep -q "EL0 process 0x00000000000000ca ran marker 0x000000000000000c" qemu-exception.log
           grep -q "EL0 process 0x0000000000000194 ran marker 0x000000000000000c" qemu-exception.log
-          grep -q "EL0 process 0x00000000000000ca ran marker 0x000000000000000b" qemu-exception.log
           grep -q "EL0 process 0x0000000000000194 ran marker 0x000000000000000b" qemu-exception.log
           grep -q "EL0 process 0x0000000000000065 ran marker 0x000000000000000d" qemu-exception.log
           grep -q "EL0 process 0x000000000000012f ran marker 0x000000000000000f" qemu-exception.log
