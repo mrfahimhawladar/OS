@@ -26,16 +26,26 @@ The proposed starting point is a small modular monolithic ARM64 kernel. The lang
 
 ## 3. First development platform: QEMU ARM64
 
-See [QEMU ARM64 platform plan](platforms/qemu-aarch64/README.md) and [kernel roadmap](kernel/README.md).
+See [QEMU ARM64 platform plan](platforms/qemu-aarch64/README.md) and [kernel source and roadmap](kernel/README.md).
 
-First boot target:
-1. AArch64 freestanding kernel entry
-2. Serial console and panic output
-3. Device Tree (FDT) parsing
-4. Detect available memory
-5. Safe halt
+### Implemented first milestone
 
-Then add page allocation/MMU, interrupts/timer, scheduler, IPC, VFS, and generic input/display/storage drivers.
+1. AArch64 freestanding entry point and bootstrap stack
+2. Device Tree (FDT) header and node/property parsing
+3. PL011 UART discovery from Device Tree
+4. Serial console initialization and kernel boot banner
+
+The kernel has been compiled to an AArch64 ELF in a local cross-target check. GitHub Actions is now configured to build it with the GNU AArch64 toolchain, boot it in QEMU, and verify the serial output.
+
+### Next kernel milestones
+
+1. Validate FDT memory nodes and create a physical memory map
+2. Add exception vectors and safe exception reporting
+3. Add the GIC and generic timer
+4. Add physical page allocator and MMU
+5. Add scheduler, threads, and context switching
+6. Add IPC, VFS, and a RAM filesystem
+7. Add generic input, display, and storage driver interfaces
 
 QEMU `virt` is a virtual reference board, not a full phone emulator. A QEMU boot does not prove camera, modem, GPU, fingerprint, cellular, battery, or touchscreen support on any real phone.
 
@@ -51,7 +61,7 @@ The [POCO X6 Neo `gold` research record](targets/gold/README.md) remains an opti
 
 The Android phone can be used to edit files, inspect source, manage GitHub, and run lightweight scripts. It is not a suitable full build host for a large native mobile OS tree.
 
-For the ARM64 kernel, the first build can use a suitably provisioned Linux AArch64 cross-compilation environment. A QEMU test job may run in CI once the bootable kernel exists. A full Android source build is not part of this custom-kernel plan.
+The first ARM64 kernel is small enough for a cross-compilation CI job. A full native mobile OS and later hardware ports will need a suitably provisioned Linux build host or cloud build machine.
 
 ## 6. Safety
 
@@ -62,8 +72,10 @@ For the ARM64 kernel, the first build can use a suitably provisioned Linux AArch
 
 ## 7. Current status
 
-**Completed now:** architecture documents, ARM64 kernel roadmap, QEMU reference-platform plan, board-port policy, optional POCO research record.
+**Implemented:** ARM64 entry assembly, bootstrap stack, basic FDT reader, PL011 console initialization, and a serial kernel banner.
 
-**Not yet implemented:** ARM64 kernel source, cross-build, QEMU boot image, graphics, lock screen, home screen, or phone drivers.
+**Verification:** local cross-target compile produced a 64-bit AArch64 ELF. GitHub Actions QEMU boot validation is pending.
+
+**Not implemented:** MMU, page allocator, interrupts, timer, scheduler, IPC, filesystem, graphics, lock screen, home screen, applications, and physical-phone drivers.
 
 The existing root-level x86 files and `preview.html` are a separate learning prototype. They are not Fahim OS Mobile.
