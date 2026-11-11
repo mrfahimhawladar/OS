@@ -1,6 +1,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "address_space.h"
 #include "console.h"
 #include "scheduler.h"
 #include "syscall.h"
@@ -49,6 +50,7 @@ static uint64_t syscall_write(uint64_t user_buffer, uint64_t length) {
     uint8_t buffer[WRITE_BUFFER_MAX];
     if (fahim_address_space_copy_from_user_current(
             buffer, user_buffer, (size_t)length) != 0) {
+        console_write("EL0 WRITE: rejected invalid user range\n");
         return (uint64_t)(int64_t)-14; /* EFAULT */
     }
 
@@ -90,6 +92,7 @@ void fahim_syscall_dispatch(uint64_t *saved_registers) {
         if (status_pointer != 0u &&
             fahim_address_space_validate_user_range_current(
                 status_pointer, sizeof(uint32_t), 1u) != 0) {
+            console_write("EL0 WAITPID: rejected non-writable status pointer\n");
             saved_registers[0] = (uint64_t)(int64_t)-14; /* EFAULT */
             return;
         }
