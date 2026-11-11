@@ -425,7 +425,7 @@ static void run_process_scheduler_self_test(void) {
 
     /* Re-arm the same upstream Generic Timer used by the IRQ self-test.
      * The five-IRQ diagnostic limit is raised for continuous scheduler ticks. */
-    const int32_t timer_result = fahim_generic_timer_init(10u);
+    const int32_t timer_result = fahim_generic_timer_init(FAHIM_SCHEDULER_TICK_MS);
     if (timer_result != 0 ||
         fahim_generic_timer_set_irq_limit(UINT32_MAX) != 0) {
         console_write("Process Scheduler self-test: FAIL (periodic timer setup)\n");
@@ -442,17 +442,28 @@ static void run_process_scheduler_self_test(void) {
     const uint32_t scheduler_ticks = fahim_generic_timer_irq_count();
     fahim_generic_timer_stop();
 
-    if (scheduler_ticks == 0u || *shared_counter != 2u) {
+    const uint32_t idle_waits = fahim_scheduler_idle_wait_count();
+    const uint32_t wakeups = fahim_scheduler_wakeup_count();
+    if (scheduler_ticks == 0u || *shared_counter != 2u ||
+        idle_waits == 0u || wakeups != 2u) {
         console_write("Process Scheduler self-test: FAIL (timer preemption did not run both tasks) ticks=");
         console_write_hex64(scheduler_ticks);
         console_write(" shared=");
         console_write_hex64(*shared_counter);
+        console_write(" idle=");
+        console_write_hex64(idle_waits);
+        console_write(" wakeups=");
+        console_write_hex64(wakeups);
         console_write("\n");
         halt_forever();
     }
 
     console_write("Process Scheduler timer preemption ticks: ");
     console_write_hex64(scheduler_ticks);
+    console_write(" idle waits: ");
+    console_write_hex64(idle_waits);
+    console_write(" wakeups: ");
+    console_write_hex64(wakeups);
     console_write("\n");
 
     if (fahim_scheduler_is_active()) {
@@ -471,7 +482,7 @@ static void run_process_scheduler_self_test(void) {
         halt_forever();
     }
 
-    console_write("Process Scheduler self-test: PASS (timer preemption, two EL0 tasks, TTBR0 switching, syscalls, exit)\n");
+    console_write("Process Scheduler self-test: PASS (timer preemption, sleep/wakeup, idle WFI, two EL0 tasks, TTBR0 switching, syscalls, exit)\n");
 }
 
 static void run_timer_irq_self_test(void) {

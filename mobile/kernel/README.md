@@ -107,7 +107,7 @@ Fahim OS now includes an AArch64 callee-saved context-switch primitive adapted f
 
 A table-driven AArch64 SVC dispatcher uses x8 for the syscall number, x0-x1 for arguments and x0 for the result. The initial minimal ABI exposes EXIT, YIELD, GETPID and LOG; unknown numbers return -ENOSYS. It is an Fahim OS-specific bootstrap ABI, not yet a POSIX or Linux syscall table.
 
-QEMU boots two EL0 tasks with separate TTBR0 address spaces and stacks while sharing one read-only executable page. Their syscall sequence verifies task IDs, round-robin yield, switching TTBR0 between distinct ASIDs, task exit, return to the boot kernel context and cleanup. The first scheduler milestone verifies cooperative switching. Timer-driven preemption and blocking task lifecycle are implemented and verified in Milestone 7B below; process reaping policies, user-fault isolation and SMP scheduling remain future work.
+QEMU boots two EL0 tasks with separate TTBR0 address spaces and stacks while sharing one read-only executable page. Their syscall sequence verifies task IDs, round-robin yield, switching TTBR0 between distinct ASIDs, task exit, return to the boot kernel context and cleanup. The first scheduler milestone verifies cooperative switching. Timer-driven preemption is verified in Milestone 7B; per-task sleep, wake deadlines and idle WFI are verified in Milestone 7C. Process reaping policies, user-fault isolation and SMP scheduling remain future work.
 
 
 ## Milestone 7B: timer-preemptive EL0 scheduling
@@ -116,7 +116,18 @@ The upstream Generic Timer bridge now supports both a bounded diagnostic run and
 
 The two-process QEMU payload no longer calls YIELD. Instead, each task increments the same user-mapped shared counter and waits until the peer increments it too. The first task therefore cannot progress until the timer interrupt preempts it and schedules the second task. Both tasks then complete their syscall sequence and exit. The test also confirms that timer ticks occurred and the shared counter reached two, before both ASID-backed address spaces and their frames are released.
 
-This verifies single-core timer-driven preemption from EL0 on the QEMU virt reference target. It does not yet implement sleep queues, task wake deadlines, waitpid, user-fault recovery, SMP, or a production process loader.
+This verifies single-core timer-driven preemption from EL0 on the QEMU virt reference target. Blocking sleep and idle wakeup are added in Milestone 7C. waitpid, user-fault recovery, SMP and a production process loader remain future work.
+
+
+## Milestone 7C: task sleep, timer wakeup and idle WFI
+
+The scheduler now tracks READY, RUNNING, SLEEPING and DEAD states. The SLEEP syscall accepts a millisecond duration, rounds it up to the 10 ms scheduler tick and parks the current task until its deadline expires. Each timer tick advances the scheduler clock, marks expired tasks READY and uses the same TTBR0/context-switch path to resume them.
+
+When no task is runnable but at least one remains asleep, the scheduler switches to the shared kernel idle continuation, unmasks IRQ delivery and executes WFI. Timer PPI 30 wakes the idle CPU; the IRQ handler can switch directly to an expired task and later resume the interrupted idle continuation. When every task exits, the scheduler returns to the boot caller with IRQ delivery masked.
+
+The QEMU payload makes the two EL0 tasks wait for each other through a deliberately shared data page, then calls SLEEP with different deadlines (30 ms and 50 ms). Both tasks log before sleeping and after waking, and both exit. CI checks both sleep-entry and post-wakeup markers, at least one idle wait, exactly two wakeups, the shared counter and timer tick output in both production and exception-test boots.
+
+This validates a small single-core sleep/deadline scheduler and idle path. It does not yet provide wait queues, waitpid/zombie handling, task slot reuse, process reaping policies, cancellation/signals, user-fault isolation or SMP scheduling.
 
 ## Reference platform and verification
 
@@ -141,14 +152,14 @@ Exception-test image: mobile/kernel/build/arm64-qemu-exception-test/fahim-kernel
 - Physical pages are now allocated from validated, page-aligned usable RAM on the single-core QEMU target. The bridge is identity-map-only and intentionally rejects initialization once the EL1 MMU is enabled.
 - Dynamic reserved-memory allocations and page-aligned allocation are not supported.
 - The current exception diagnostics are fatal for unsupported synchronous exceptions, FIQ and SError. Lower-EL AArch64 SVC and IRQ vectors preserve per-task trap return state; user faults are not yet isolated and reaped.
-- The kernel runs through its TTBR1 high-half direct map and can schedule multiple EL0 tasks with separate ASIDs, private EL1 stacks, SVC services and timer-driven preemption. The lower supervisor identity mappings remain for kernel data and platform references. General user-pointer validation, user-fault recovery, demand paging, guard pages, process reaping and SMP TLB shootdown are not implemented yet.
+- The kernel runs through its TTBR1 high-half direct map and can schedule multiple EL0 tasks with separate ASIDs, private EL1 stacks, SVC services, timer preemption, timed sleep/wakeup and a WFI idle continuation. The lower supervisor identity mappings remain for kernel data and platform references. General user-pointer validation, user-fault recovery, demand paging, guard pages, process reaping and SMP TLB shootdown are not implemented yet.
 - The upstream GICv3 driver is currently initialized for the single-core QEMU layout. The active dispatcher handles the EL1 physical timer PPI; general device IRQ registration, SPI routing, SMP and interrupt nesting remain future work.
-- The generic timer and single-core preemptive EL0 scheduler are functional on the QEMU reference target. A full heap/process ABI, storage, input, graphics, touchscreen and phone-specific device drivers remain to be developed.
+- The generic timer and single-core preemptive EL0 scheduler, including timed sleep/wakeup, are functional on the QEMU reference target. A full heap/process ABI, storage, input, graphics, touchscreen and phone-specific device drivers remain to be developed.
 - This is not an Android image, phone ROM, or flashable artifact. QEMU success does not prove support for a real smartphone.
 
 ## Next milestones
 
-1. Add task sleep/wakeup deadlines, wait queues, task exit status, zombie/reap lifecycle and scheduler idle handling
+1. Add wait queues, waitpid/child exit status, zombie states, task slot reuse and safe process/resource reaping
 2. Add EL0 fault isolation, checked copy-in/copy-out and syscall pointer validation
 3. Add ELF64 loader/exec, process creation, per-process user stack/TLS and a stable syscall ABI
 4. Add kernel heap, memory zones, allocator reclamation and SMP-safe page allocation/TLB shootdown
