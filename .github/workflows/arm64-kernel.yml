@@ -78,6 +78,10 @@ jobs:
           grep -q "Memory layout: validated" qemu-arm64.log
           grep -q "Physical Page Allocator: initialized (frame-alloc 0.1.0)" qemu-arm64.log
           grep -q "Physical Page Allocator self-test: PASS (4 KiB page, 4-page block, read/write, free/reuse)" qemu-arm64.log
+          grep -q "MMU: EL1 translation enabled (TTBR0 identity map)" qemu-arm64.log
+          grep -q "MMU: RAM Normal-WB; GIC/PL011 Device-nGnRnE" qemu-arm64.log
+          grep -q "MMU: kernel text RO+X; rodata RO+XN; data RW+XN" qemu-arm64.log
+          grep -q "MMU self-test: PASS (RAM, Device MMIO, permissions, post-MMU page allocation)" qemu-arm64.log
           grep -q "RAM region base: 0x0000000040000000 size: 0x0000000020000000 bytes" qemu-arm64.log
           grep -q "Reserved region base: 0x0000000040000000" qemu-arm64.log
           grep -q "Reserved region base: 0x0000000040200000" qemu-arm64.log

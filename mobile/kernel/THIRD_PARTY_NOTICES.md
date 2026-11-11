@@ -38,3 +38,16 @@ The el1 feature enables EL1 system-register access. Default embedded-hal feature
 - Scope: 4 KiB base-frame allocation, contiguous buddy blocks, boot usable-range registration and allocator statistics.
 
 Fahim OS consumes the published crate; its allocator implementation is not copied into this repository. The crate has no runtime dependencies and does not require a heap. The upstream project marks its 0.1 API as unstable. Its own kernel-demo currently targets x86-64; the ARM64 QEMU port and identity-map provenance adapter are Fahim OS integration work and are validated in the Fahim OS workflow. This integration rejects initialization when SCTLR_EL1.M is set until a page-table-aware mapping provider is implemented.
+
+
+## aarch64-paging 0.12.3
+
+- Project: aarch64-paging Authors (Ard Biesheuvel and Andrew Walbran)
+- Source: https://github.com/google/aarch64-paging
+- Upstream commit: d2b1247113a235de5884ecc27dc0d2c0388054ca
+- Version: 0.12.3 (pinned in mobile/kernel/rust/Cargo.toml)
+- License: dual-licensed MIT OR Apache-2.0
+- Used by: the ARM64 kernel's EL1 VMSA page-table builder
+- Scope: 4 KiB stage-1 page tables, EL1&0 translation regime, mapping descriptor flags and TTBR activation.
+
+Fahim OS uses the upstream Mapping API with a custom no-heap Translation implementation backed by frame-alloc. The crate source is not copied into this repository. The upstream README states that this is not an officially supported Google product. Fahim OS's QEMU validation is independent and limited to its single-core identity-map reference configuration.

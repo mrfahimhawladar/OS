@@ -6,9 +6,15 @@
 #include "gicv3_driver.h"
 #include "generic_timer.h"
 #include "page_allocator.h"
+#include "mmu.h"
+#include "console.h"
 
 extern uint8_t __kernel_start[];
 extern uint8_t __kernel_end[];
+extern uint8_t __text_start[];
+extern uint8_t __text_end[];
+extern uint8_t __rodata_start[];
+extern uint8_t __rodata_end[];
 
 int console_init_from_fdt(const void *dtb);
 void console_write(const char *text);
@@ -97,6 +103,67 @@ static void run_page_allocator_self_test(const memory_layout_t *layout) {
     }
 
     console_write("Physical Page Allocator self-test: PASS (4 KiB page, 4-page block, read/write, free/reuse)\n");
+}
+
+static void run_mmu_self_test(const memory_layout_t *layout,
+                                const gicv3_platform_info_t *gic) {
+    memory_region_t devices[GICV3_MAX_REDISTRIBUTOR_REGIONS + 2u];
+    size_t device_count = 0u;
+
+    devices[device_count++] = gic->distributor;
+    for (size_t i = 0; i < gic->redistributor_region_count; ++i) {
+        devices[device_count++] = gic->redistributors[i];
+    }
+
+    const uint64_t uart_base = console_uart_physical_base();
+    if (uart_base == 0u) {
+        console_write("MMU: PL011 physical address unavailable\n");
+        halt_forever();
+    }
+    devices[device_count].base = uart_base;
+    devices[device_count].size = 0x1000u;
+    ++device_count;
+
+    const int32_t result = fahim_mmu_init(
+        layout->ram, layout->ram_count,
+        devices, device_count,
+        (uintptr_t)__text_start, (uintptr_t)__text_end,
+        (uintptr_t)__rodata_start, (uintptr_t)__rodata_end);
+    if (result != 0 || fahim_mmu_is_enabled() != 1u) {
+        console_write("MMU: initialization FAILED, code=");
+        console_write_hex64((uint64_t)(int64_t)result);
+        console_write("\n");
+        halt_forever();
+    }
+
+    uint64_t sctlr;
+    __asm__ volatile("mrs %0, SCTLR_EL1" : "=r"(sctlr));
+    if ((sctlr & 1u) == 0u) {
+        console_write("MMU: SCTLR_EL1.M did not become active\n");
+        halt_forever();
+    }
+
+    /* The UART remains usable only if its mapping has Device memory attributes. */
+    console_write("MMU: EL1 translation enabled (TTBR0 identity map)\n");
+    console_write("MMU: RAM Normal-WB; GIC/PL011 Device-nGnRnE\n");
+    console_write("MMU: kernel text RO+X; rodata RO+XN; data RW+XN\n");
+
+    const uint64_t page = fahim_page_allocator_alloc(1u);
+    if (page == UINT64_MAX || (page & 0xfffu) != 0u) {
+        console_write("MMU self-test: FAIL (physical page allocation)\n");
+        halt_forever();
+    }
+
+    volatile uint64_t *probe = (volatile uint64_t *)(uintptr_t)page;
+    *probe = 0x4d4d_5541_524d_3634ull;
+    const int memory_ok = *probe == 0x4d4d_5541_524d_3634ull;
+    const int32_t free_result = fahim_page_allocator_free(page, 1u);
+    if (!memory_ok || free_result != 0) {
+        console_write("MMU self-test: FAIL (identity RAM access)\n");
+        halt_forever();
+    }
+
+    console_write("MMU self-test: PASS (RAM, Device MMIO, permissions, post-MMU page allocation)\n");
 }
 
 static void run_timer_irq_self_test(void) {
@@ -243,6 +310,7 @@ void kernel_main(const void *dtb) {
 
     console_write("\nMilestone 3: reserved memory exclusions.\n");
     run_page_allocator_self_test(&layout);
+    run_mmu_self_test(&layout, &gic);
     run_timer_irq_self_test();
 
 #ifdef FAHIM_EXCEPTION_SELFTEST

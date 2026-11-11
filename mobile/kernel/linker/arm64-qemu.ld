@@ -15,16 +15,22 @@ SECTIONS
 
     .text :
     {
+        __text_start = .;
         KEEP(*(.text.boot))
         . = ALIGN(2048);
         KEEP(*(.text.vectors))
         *(.text .text.*)
+        . = ALIGN(4K);
+        __text_end = .;
     } :text
 
     . = ALIGN(0x10000);
     .rodata :
     {
+        __rodata_start = .;
         *(.rodata .rodata.*)
+        . = ALIGN(4K);
+        __rodata_end = .;
     } :rodata
 
     . = ALIGN(0x10000);

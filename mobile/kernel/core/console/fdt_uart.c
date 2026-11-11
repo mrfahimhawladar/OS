@@ -216,6 +216,10 @@ void console_putc(char character) {
     uart_write_register(PL011_DR, (uint32_t)(uint8_t)character);
 }
 
+uint64_t console_uart_physical_base(void) {
+    return (uint64_t)uart_base;
+}
+
 void console_write(const char *text) {
     if (text == NULL) return;
     while (*text != '\0') console_putc(*text++);
