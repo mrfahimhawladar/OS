@@ -1,6 +1,6 @@
 # Fahim OS Kernel
 
-This is the new ARM64 kernel implementation. The root-level x86 `kernel.cpp` is a separate learning prototype and is not reused as the mobile kernel.
+This is the new device-independent ARM64 kernel implementation. The root-level x86 `kernel.cpp` is a separate learning prototype and is not reused as the mobile kernel.
 
 ## Verified milestone 1: ARM64 boot + serial console
 
@@ -10,11 +10,18 @@ This is the new ARM64 kernel implementation. The root-level x86 `kernel.cpp` is 
 - PL011 serial UART discovery via Device Tree `compatible` and `reg` properties
 - Polled serial text output
 
-The first target is QEMU's generic ARM64 `virt` platform. QEMU places its bare-metal DTB at the start of RAM (0x40000000) and reserves a 1 MiB region for it. The kernel ELF is linked at 0x40200000 to keep the image clear of that reservation.
+## Milestone 2: FDT RAM discovery
 
-**Verification result:** GitHub Actions successfully compiled the AArch64 ELF, booted it in QEMU, and matched the expected serial banner and Device Tree/UART messages.
+- Reads enabled Device Tree nodes with `device_type = "memory"`
+- Uses the parent bus's `#address-cells` and `#size-cells` when decoding each `reg` tuple
+- Supports one-cell and two-cell addresses and sizes
+- Handles multiple RAM tuples and rejects malformed or overflowing ranges
+- Reports each discovered RAM region over the serial console
+- The QEMU CI test checks the expected 512 MiB RAM region at `0x40000000`
 
-[Successful QEMU build and boot test](https://github.com/mrfahimhawladar/OS/actions/runs/42929151504)
+The first reference target is QEMU's generic ARM64 `virt` platform. QEMU places its bare-metal DTB at the start of RAM (0x40000000) and reserves a 1 MiB region for it. The kernel ELF is linked at 0x40200000 to keep the image clear of that reservation.
+
+**Verification:** GitHub Actions compiles the AArch64 ELF, boots it in QEMU, and checks the serial banner, UART initialization, detected RAM base, and RAM size. See the [ARM64 kernel workflow](https://github.com/mrfahimhawladar/OS/actions/workflows/arm64-kernel.yml).
 
 ## Build locally
 
@@ -32,15 +39,16 @@ mobile/kernel/build/arm64-qemu/fahim-kernel.elf
 
 ## Important limits
 
-- This is only an early serial-console kernel milestone.
+- The memory map is currently detection/reporting only; no memory is allocated from it.
+- Reserved-memory nodes and boot-time exclusions are not yet combined into a safe allocatable map. A physical page allocator must not use the reported RAM ranges until those reservations, the kernel image, and the DTB are excluded.
 - MMU/page tables, interrupt controller, timer, scheduler, heap, storage, input, graphics, and touchscreen are not implemented yet.
-- It is not an Android image, phone ROM, or flashable artifact.
+- This is not an Android image, phone ROM, or flashable artifact.
 - QEMU success does not imply support for any real smartphone.
 
 ## Next milestones
 
-1. Validate FDT memory nodes and create a memory map
+1. Parse reserved-memory and establish an explicit reserved-region map
 2. Add exception vectors and safe exception reporting
 3. Add the GIC and generic timer
-4. Add physical page allocator and MMU
-5. Add scheduler and context switching
+4. Implement a physical page allocator that only uses verified free RAM
+5. Add MMU/page tables, then scheduler and context switching
