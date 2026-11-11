@@ -50,24 +50,28 @@ Use a language because a subsystem needs it, not to reach a target language coun
 | UI and applications | To be selected after the graphics/runtime interface is defined |
 | Build and test tools | Make/CMake, shell, Python |
 
-The first kernel milestone should stay small and testable. Do not begin with modem, camera, GPU, or cellular telephony drivers.
-
 ## Kernel architecture proposal
 
 Start with a small **modular monolithic kernel**. Kernel subsystems communicate through explicit interfaces, while remaining in one privileged address space initially. This is a practical first design for a small team and allows driver work to begin without introducing a full microkernel IPC boundary immediately.
 
-First kernel milestones:
-1. ARM64 entry and exception vectors
-2. Serial console and panic path
-3. Device Tree parsing
-4. Physical memory allocator and MMU/page tables
-5. Generic interrupt controller and timer
-6. Preemptive scheduler and threads
-7. Kernel heap, synchronization, and IPC
-8. VFS and a simple RAM filesystem
-9. Generic input/display/storage driver interfaces
+### Implemented first milestone
 
-This is a proposed architecture, not already implemented code.
+- ARM64 entry assembly and bootstrap stack
+- Freestanding C kernel entry
+- Flattened Device Tree reader
+- PL011 serial UART discovery from Device Tree
+- Polled serial boot banner
+
+### Next kernel milestones
+
+1. Validate FDT memory nodes and create a memory map
+2. Add exception vectors and safe exception reporting
+3. Add the GIC and generic timer
+4. Add physical page allocator and MMU/page tables
+5. Add preemptive scheduler and threads
+6. Add kernel heap, synchronization, and IPC
+7. Add VFS and a simple RAM filesystem
+8. Add generic input/display/storage driver interfaces
 
 ## Hardware independence
 
@@ -80,4 +84,4 @@ A device port must supply its boot/firmware contract, memory map, interrupt rout
 - The root directory remains the old 32-bit x86 teaching prototype.
 - `mobile/` is the active general smartphone OS project.
 - `mobile/targets/gold/` is an optional future POCO X6 Neo research port, not the main project target.
-- No Fahim OS mobile kernel or ROM has been built or boot-tested yet.
+- The ARM64 kernel is at the serial-console bring-up stage; no graphics or phone driver stack exists yet.
