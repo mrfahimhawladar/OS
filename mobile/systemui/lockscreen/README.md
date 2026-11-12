@@ -37,3 +37,9 @@ The native implementation must keep credential verification, biometric trust, em
 - [ ] Real device credential and biometric integration.
 - [ ] Notification, battery, network and carrier data binding.
 - [ ] AOSP build and device validation.
+
+## Native security core
+
+The `native/` subdirectory now contains a host-tested C++ lock-screen state machine. It owns transient PIN input, clears the buffer after use, enforces a 4–16 digit length, and applies escalating monotonic-clock lockouts after five rejected attempts. The production credential verifier remains an OS service interface; no hard-coded PIN or fake production credential store is included.
+
+This is not yet boot-active. Fahim OS still needs a trusted credential store/verifier, persistent lockout storage, display and input drivers, a compositor/window manager, and a kernel/session lock gate. See [native integration notes](native/README.md).
