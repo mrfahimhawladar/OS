@@ -1,56 +1,73 @@
 Fahim OS Lock Screen, SystemUI and Secure Credential verification report
 Date: 2026-11-12
 
-## Native SystemUI CI
+## Native SystemUI / TEEC client CI
 
-Latest successful run after the owning TeeCredentialService/LockScreenCore wiring:
-- https://github.com/mrfahimhawladar/OS/actions/runs/43216056372
+Latest successful run:
+- https://github.com/mrfahimhawladar/OS/actions/runs/43218457680
 
 Results:
 - CMake configure and build: PASS with OP-TEE client disabled and enabled.
 - Enabled branch links against upstream GlobalPlatform libteec built from pinned OP-TEE Client commit 9f4414f62dfc5692fd39f760515ce2d344d07b6d.
 - CTest: 2/2 tests passed in each configuration (lockscreen_core_tests, systemui_runtime_tests).
-- Runtime tests cover framebuffer validation/clipping, XRGB8888/RGB565 writes, calibrated touch input, swipe-to-bouncer, on-screen PIN entry with a test-only verifier, native Lock Screen bitmap registration/removal in the compositor, mock kernel SVC unlock/relock, locked app-surface filtering, TEE backend result mapping, enrollment/duplicate-enrollment response mapping, secure retry deadline mapping across a new LockScreenCore, and fail-closed operation when the TEE transport is unavailable.
-- The CI runner has no TEE device. The real TEEC client path is compile/link-tested; the no-device path is expected to return unavailable and cannot authenticate.
+- Runtime tests cover framebuffer validation/clipping, XRGB8888/RGB565 writes, calibrated touch input, swipe-to-bouncer, on-screen PIN entry with a test-only verifier, native Lock Screen bitmap registration/removal in the compositor, mock kernel SVC unlock/relock, locked app-surface filtering, TEE backend result mapping, enrollment/duplicate-enrollment response mapping, secure retry deadline mapping across a new LockScreenCore, and fail-closed behavior when the TEE transport is unavailable.
+- The no-TEE test also checks that the new TeeCredentialService::enroll_initial_pin() API returns Unavailable without an installed TEE/TUI and leaves the lock screen Locked.
+- The CI runner has no TEE device. The real TEEC client path is compile/link-tested; the no-device path is expected to return unavailable and cannot authenticate or enroll.
 
-## OP-TEE Secure World Trusted Application CI
+## OP-TEE Secure World, Trusted UI and Provisioner CI
 
 Latest successful run:
-- https://github.com/mrfahimhawladar/OS/actions/runs/43216049336
+- https://github.com/mrfahimhawladar/OS/actions/runs/43219231569
 
-Results:
-- OP-TEE OS developer kit exported from pinned OP-TEE OS commit bffdda07ee61910cc63f45c45838fb2b59288c71.
-- Fahim credential TA cross-compiled successfully.
-- ELF inspection: ELF64, AArch64.
-- Signed .ta package generated and uploaded as artifact `fahim-os-credential-ta-dev-signed`.
-- Artifact ID: 13943577477.
-- Artifact SHA-256: ba12c7a0544e3923121df0d98341ce3bd3b2b38816d613f147a614766b1c0c87.
+Verified steps:
+- Pinned OP-TEE OS source fetched at commit bffdda07ee61910cc63f45c45838fb2b59288c71.
+- Fahim Trusted UI pseudo-TA overlay copied into OP-TEE core and registered in core/pta/sub.mk.
+- ARM64 OP-TEE TA developer kit exported successfully.
+- Explicit core object target compiled and was verified present:
+  out/arm/core/pta/fahim_tui_pta.o
+- Credential TA compiled, linked and development-signed.
+- Provisioner TA compiled, linked and development-signed.
+- Both TA ELF files inspected as ELF64 AArch64.
+- Both signed .ta files uploaded in artifact fahim-os-secure-enrollment-dev-signed.
+- Artifact ID: 13944881217.
+- Artifact SHA-256: 3ddb8f945c3e15b5dac48aa3c29cf981ed464cbee0404c147e9a4ff6e5b1644c.
 - Artifact expires 2026-12-12.
-- Native credential service now owns the OP-TEE transport, backend, verifier and LockScreenCore in the correct lifetime order; the no-TEE test proves its core remains Locked and returns BackendUnavailable.
 
-**Signing warning:** CI uses OP-TEE's bundled default development TA signing key. The artifact proves compile/link/signing format only. It is NOT a production-trusted package. The device owner must re-sign it with the platform's protected TA signing key and configure the matching trust anchor before installation.
+## Secure enrollment flow implemented
 
-## Credential design implemented in source
+1. Normal world invokes TeeCredentialService::enroll_initial_pin(); the API accepts no PIN, keypad events or frame buffer.
+2. The signed Provisioner TA opens the OP-TEE core Trusted UI pseudo-TA using an internal TA-to-PTA session.
+3. The TUI pseudo-TA accepts only the pinned Provisioner TA UUID and asks platform secure-input/display hooks for the first PIN and confirmation. The PIN first enters a core-private Secure World buffer and is copied only into the trusted Provisioner TA memory.
+4. The Provisioner TA validates numeric 6–16 digit values, compares the two entries in constant time and sends the PIN only over a secure TA-to-TA call to the Credential TA.
+5. The Credential TA checks the caller UUID/login, creates the salted HMAC verifier and persistent lockout record in RPMB.
+6. The normal-world launcher receives only a status result.
 
-- OP-TEE TA source: `mobile/systemui/tee/credential_ta/credential_ta.c`.
-- C++ transport/backend: `mobile/systemui/runtime/src/TeeCredentialBackend.cpp`.
-- Owning runtime wrapper: `TeeCredentialService`.
-- Shared command protocol: `mobile/systemui/tee/include/fahim_credential_protocol.h`.
-- The TA accepts numeric PINs of 4–16 digits (production recommendation: 6+ digits).
-- It generates a random 256-bit salt and a TEE-held HMAC-SHA256 pepper key during enrollment. Only the salted HMAC verifier, format metadata, failed-attempt count, lockout level, retry deadline and last-seen secure time are stored; the raw PIN is not stored.
-- Credential and pepper objects use `TEE_STORAGE_PRIVATE_RPMB`.
-- The TA requires `gpd.tee.trustedStorage.antiRollback.protectionLevel >= 1000` and `gpd.tee.systemTime.protectionLevel >= 1000`. Missing/weak capability, storage errors, clock rollback, malformed records or missing pepper fail closed.
-- Five failures trigger persistent escalating lockout (30 seconds upward, capped at one hour); success resets the failure and escalation state.
-- The TA creates the pepper only during enrollment; verification never silently recreates a missing pepper.
+Source files:
+- mobile/systemui/tee/credential_ta/credential_ta.c
+- mobile/systemui/tee/provisioner_ta/provisioner_ta.c
+- mobile/systemui/tee/platform/optee/fahim_tui_pta.c
+- mobile/systemui/tee/platform/optee/fahim_tui_platform_hal.h
+- mobile/systemui/tee/include/fahim_tui_protocol.h
+- mobile/systemui/runtime/src/TeeCredentialBackend.cpp
+
+## Credential design
+
+- Numeric PIN length 4–16 in Credential TA; Provisioner flow enforces at least 6 digits.
+- Random 256-bit salt and TEE-held HMAC-SHA256 pepper key.
+- Raw PIN is not persisted.
+- Credential and pepper objects use TEE_STORAGE_PRIVATE_RPMB.
+- The TA requires hardware anti-rollback protection and a protected TEE system clock; missing/weak capability, storage errors, clock rollback, malformed records or missing pepper fail closed.
+- Five failures trigger persistent escalating lockout (30 seconds upward, capped at one hour); success resets failure/escalation state.
+- Verification never silently recreates a missing pepper.
 
 ## Explicitly not yet production-integrated
 
+- The Trusted UI core PTA is compiled, but its board HAL has only weak fail-closed defaults. No supported secure display or secure touch/input driver has been implemented for the QEMU reference board or a physical phone. The weak begin/read_pin/show_status/end hooks return NOT_SUPPORTED. Therefore first-time PIN enrollment is not currently usable on hardware.
 - No OP-TEE Secure World/BL32 is deployed or launched by Fahim OS's current boot chain.
-- No device RPMB key, RPMB secure storage backend or TEE-protected system clock has been provisioned or tested on physical hardware.
-- No production TA signing key/trust anchor is configured. The CI key is development-only.
-- Enrollment is accepted only from a separately signed TEE Trusted Application with pinned UUID `28e3b2d4-4a20-4f91-9a11-464148494d50`. That provisioning TA and its Trusted UI/physical-presence flow are not implemented here. Therefore first-time credential enrollment is intentionally unavailable to the public TEEC client.
+- No device RPMB key, RPMB secure-storage backend or TEE-protected system clock has been provisioned or tested on physical hardware.
+- No production TA signing key/trust anchor is configured. CI uses the pinned OP-TEE development signing key; artifacts are not production-trusted and must be re-signed with the device owner's protected signing key and matching trust anchor.
 - The native runtime is not boot-launched as a trusted Lock Screen service. The kernel QEMU role-gate test uses a synthetic LOCKSCREEN-role payload; it does not boot the native renderer or verify a real PIN.
-- The runner's TEEC-enabled tests have no TEE hardware. Passing them proves the client branch compiles/links and unavailable hardware fails closed; it does not prove secure-world invocation on a device.
+- The runner's TEEC-enabled tests have no TEE hardware. They prove compile/link and fail-closed behavior, not secure-world invocation.
 
 ## Kernel and device Lock Screen boundary
 
@@ -62,8 +79,8 @@ Still required for a real visible, usable phone Lock Screen:
 - QEMU virtio-gpu/ramfb or phone display controller driver and framebuffer mapping.
 - QEMU virtio-input or physical touchscreen driver.
 - Boot-time trusted process/session manager which launches the native Lock Screen with the kernel-assigned LOCKSCREEN role.
-- OP-TEE secure-world integration, RPMB/time provisioning, production TA signing and trusted enrollment/Trusted UI.
+- OP-TEE secure-world boot-chain integration, RPMB/time provisioning, production TA signing/trust anchor and the board-specific secure TUI display/input HAL.
 - Authenticated service IPC and live clock, battery, carrier, network and notification services.
 - Complete board port, ROM/image integration and recovery plan.
 
-Therefore: the credential implementation and build artefacts now exist and CI tests pass, but production PIN enrollment/authentication and boot-active Lock Screen have NOT been verified on QEMU hardware or a physical phone. No Android image, ROM, APK or flashable phone image is produced by these runs.
+Therefore: the Provisioner TA and Trusted UI PTA now exist and compile into their respective ARM64 outputs, and the native client/tests pass. However real secure PIN enrollment/authentication and a boot-active Lock Screen have NOT been verified on QEMU hardware or a physical phone. No Android image, ROM, APK or flashable phone image is produced by these runs.
