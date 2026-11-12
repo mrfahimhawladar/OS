@@ -186,7 +186,7 @@ static TEE_Result calculate_pin_verifier(
     uint8_t message[FAHIM_CREDENTIAL_SALT_BYTES + 1u +
                     FAHIM_CREDENTIAL_PIN_MAX];
     size_t message_length = FAHIM_CREDENTIAL_SALT_BYTES + 1u + pin_length;
-    uint32_t digest_length = FAHIM_CREDENTIAL_DIGEST_BYTES;
+    size_t digest_length = FAHIM_CREDENTIAL_DIGEST_BYTES;
     TEE_Result result;
 
     if (pin == NULL || salt == NULL || digest == NULL ||
@@ -246,7 +246,7 @@ static TEE_Result load_record(TEE_ObjectHandle *handle,
                               credential_record_t *record)
 {
     TEE_ObjectInfo info;
-    uint32_t read_length = 0u;
+    size_t read_length = 0u;
     TEE_Result result;
 
     result = TEE_OpenPersistentObject(
