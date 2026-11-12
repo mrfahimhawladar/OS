@@ -16,15 +16,7 @@ constexpr std::uint32_t kAccent = 0xffa9d4ffu;
 constexpr std::uint32_t kDark = 0xff111b2au;
 constexpr std::uint32_t kDanger = 0xffff9e9eu;
 
-bool point_in_rect(std::int32_t x, std::int32_t y,
-                   const fahim::ui::Rect& rect) noexcept {
-    return rect.width != 0u && rect.height != 0u &&
-        x >= rect.x && y >= rect.y &&
-        static_cast<std::int64_t>(x) <
-            static_cast<std::int64_t>(rect.x) + rect.width &&
-        static_cast<std::int64_t>(y) <
-            static_cast<std::int64_t>(rect.y) + rect.height;
-}
+
 }  // namespace
 
 LockScreenRenderer::LockScreenRenderer(std::uint32_t* argb_pixels,
