@@ -108,6 +108,18 @@ bool LockScreenController::handle_event(
     return core_.state() != LockState::Unlocked;
 }
 
+bool LockScreenController::pump_input(
+    fahim::input::TouchInputPipeline& input, std::size_t max_events) noexcept {
+    if (max_events == 0u) return core_.state() != LockState::Unlocked;
+    fahim::ui::PointerEvent event{};
+    std::size_t processed = 0u;
+    while (processed < max_events && input.next_event(event)) {
+        ++processed;
+        if (!handle_event(event)) return false;
+    }
+    return core_.state() != LockState::Unlocked;
+}
+
 void LockScreenController::tick() noexcept {
     core_.tick();
     if (was_lockout_ && core_.state() != LockState::Lockout) {
@@ -136,6 +148,17 @@ void LockScreenController::render(const LockScreenFrameInfo& frame) noexcept {
         (remaining.count() + 999) / 1000);
     state.message = message_;
     renderer_.render(frame, state);
+}
+
+bool LockScreenController::render_to_compositor(
+    const LockScreenFrameInfo& frame, fahim::ui::Compositor& compositor,
+    std::uint32_t surface_id, std::int32_t z_order) noexcept {
+    if (core_.state() == LockState::Unlocked) {
+        compositor.remove_surface(surface_id);
+        return false;
+    }
+    render(frame);
+    return renderer_.register_surface(compositor, surface_id, z_order);
 }
 
 }  // namespace fahim::systemui
