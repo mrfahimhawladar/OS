@@ -9,7 +9,9 @@
 typedef enum {
     FAHIM_TASK_ROLE_APPLICATION = 0,
     FAHIM_TASK_ROLE_LOCKSCREEN = 1,
-    FAHIM_TASK_ROLE_EMERGENCY = 2
+    FAHIM_TASK_ROLE_EMERGENCY = 2,
+    /* Trusted system shell; runnable only after the kernel session unlocks. */
+    FAHIM_TASK_ROLE_SYSTEM_SHELL = 3
 } fahim_task_role_t;
 
 int fahim_scheduler_create_user(uint32_t address_space,
