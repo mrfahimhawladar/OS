@@ -6,10 +6,24 @@
 #define FAHIM_MAX_USER_TASKS 4u
 #define FAHIM_SCHEDULER_TICK_MS 10u
 
+typedef enum {
+    FAHIM_TASK_ROLE_APPLICATION = 0,
+    FAHIM_TASK_ROLE_LOCKSCREEN = 1,
+    FAHIM_TASK_ROLE_EMERGENCY = 2
+} fahim_task_role_t;
+
 int fahim_scheduler_create_user(uint32_t address_space,
                                 uint64_t entry,
                                 uint64_t user_stack_top,
                                 uint64_t pid);
+int fahim_scheduler_create_user_with_role(uint32_t address_space,
+                                          uint64_t entry,
+                                          uint64_t user_stack_top,
+                                          uint64_t pid,
+                                          fahim_task_role_t role);
+int fahim_scheduler_set_session_locked(uint32_t locked);
+int fahim_scheduler_session_locked(void);
+int fahim_scheduler_role_allowed(fahim_task_role_t role);
 void fahim_scheduler_start(void);
 int fahim_scheduler_set_parent(uint32_t child_pid, uint32_t parent_pid);
 int64_t fahim_scheduler_waitpid(uint32_t target_pid, int64_t *exit_status);
