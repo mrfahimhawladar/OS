@@ -200,3 +200,16 @@ Exception-test image: mobile/kernel/build/arm64-qemu-exception-test/fahim-kernel
 8. Add security boundaries, capability/permission model, executable signing/verification and update/rollback
 9. Port the platform layer to a real ARM64 smartphone SoC: boot chain, device tree, clocks, regulators, pinctrl, storage, display, touch, modem, Wi-Fi, audio, thermal and suspend/resume
 10. Build the Android-compatible userspace/runtime, graphics composition, system services, app package/install model and developer tooling
+
+## Lock Screen integration boundary
+
+The kernel source is again present in the current main branch and the ARM64 QEMU workflow verifies its existing boot path. The native Lock Screen runtime currently lives in `mobile/systemui/runtime/`, outside the freestanding kernel. Do not link its standard C++ runtime directly into the kernel image.
+
+A future trusted system-process launch path must:
+1. Obtain a platform-approved display mapping from a framebuffer/virtio-GPU or phone display driver.
+2. Obtain normalized input events from virtio-input or the board touchscreen driver.
+3. Create the compositor and Lock Screen session before exposing ordinary application sessions.
+4. Map application surfaces/input only through a kernel-enforced locked-session policy.
+5. Delegate PIN verification and persistent lockout policy to protected credential storage/TEE; there is intentionally no default PIN or software-only production verifier.
+
+Until the process loader, graphics/input drivers and trusted credential backend exist, the runtime tests prove component behavior only—not a boot-time security boundary.
