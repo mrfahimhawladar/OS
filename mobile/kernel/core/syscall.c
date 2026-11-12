@@ -41,6 +41,17 @@ static uint64_t syscall_sleep(uint64_t milliseconds, uint64_t unused) {
     return (uint64_t)(int64_t)result;
 }
 
+static uint64_t syscall_get_session_locked(uint64_t unused0, uint64_t unused1) {
+    (void)unused0;
+    (void)unused1;
+    return (uint64_t)fahim_scheduler_session_locked();
+}
+
+static uint64_t syscall_set_session_locked(uint64_t locked, uint64_t unused) {
+    (void)unused;
+    return (uint64_t)(int64_t)fahim_scheduler_set_session_locked((uint32_t)locked);
+}
+
 static uint64_t syscall_write(uint64_t user_buffer, uint64_t length) {
     enum { WRITE_BUFFER_MAX = 256 };
     if (length > WRITE_BUFFER_MAX) {
@@ -79,6 +90,8 @@ static const syscall_handler_t syscall_table[] = {
     [FAHIM_SYS_LOG] = syscall_log,
     [FAHIM_SYS_WRITE] = syscall_write,
     [FAHIM_SYS_SLEEP] = syscall_sleep,
+    [FAHIM_SYS_GET_SESSION_LOCKED] = syscall_get_session_locked,
+    [FAHIM_SYS_SET_SESSION_LOCKED] = syscall_set_session_locked,
 };
 
 void fahim_syscall_dispatch(uint64_t *saved_registers) {
