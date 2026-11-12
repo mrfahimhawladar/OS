@@ -4,7 +4,7 @@ Date: 2026-11-12
 ## Native SystemUI / TEEC client CI
 
 Latest successful run:
-- https://github.com/mrfahimhawladar/OS/actions/runs/43218457680
+- https://github.com/mrfahimhawladar/OS/actions/runs/43219601946
 
 Results:
 - CMake configure and build: PASS with OP-TEE client disabled and enabled.
@@ -17,7 +17,7 @@ Results:
 ## OP-TEE Secure World, Trusted UI and Provisioner CI
 
 Latest successful run:
-- https://github.com/mrfahimhawladar/OS/actions/runs/43219231569
+- https://github.com/mrfahimhawladar/OS/actions/runs/43219656447
 
 Verified steps:
 - Pinned OP-TEE OS source fetched at commit bffdda07ee61910cc63f45c45838fb2b59288c71.
@@ -29,8 +29,8 @@ Verified steps:
 - Provisioner TA compiled, linked and development-signed.
 - Both TA ELF files inspected as ELF64 AArch64.
 - Both signed .ta files uploaded in artifact fahim-os-secure-enrollment-dev-signed.
-- Artifact ID: 13944881217.
-- Artifact SHA-256: 3ddb8f945c3e15b5dac48aa3c29cf981ed464cbee0404c147e9a4ff6e5b1644c.
+- Artifact ID: 13944219868.
+- Artifact SHA-256: 0b734870060caa868022dcaf9645a41c94284f5df14dd2854696c1ab8faf91c4.
 - Artifact expires 2026-12-12.
 
 ## Secure enrollment flow implemented
