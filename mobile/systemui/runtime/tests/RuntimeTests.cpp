@@ -483,9 +483,11 @@ static void test_optee_transport_fails_closed_without_client_support() {
 static void test_tee_credential_service_fails_closed_without_optee() {
     fahim::security::TeeCredentialService service;
     assert(!service.available());
-    const std::uint8_t pin[]{'2', '4', '6', '8'};
-    assert(service.verifier().verify_pin(pin, sizeof(pin)) ==
-           VerificationResult::TemporarilyUnavailable);
+    assert(service.lock_screen_core().state() == LockState::Locked);
+    enter_pin(service.lock_screen_core(), "2468");
+    assert(service.lock_screen_core().submit_pin() ==
+           fahim::systemui::SubmitResult::BackendUnavailable);
+    assert(service.lock_screen_core().state() == LockState::Locked);
 }
 
 static void test_missing_credential_backend_fails_closed() {
