@@ -15,7 +15,6 @@ using fahim::systemui::SystemStatus;
 using fahim::systemui::SystemPlatformServices;
 using fahim::systemui::SystemRadio;
 using fahim::systemui::SystemTheme;
-using fahim::security::AuthenticatorAccount;
 using fahim::security::AuthenticatorVault;
 using fahim::security::OneTimeCode;
 
@@ -133,7 +132,6 @@ static void test_native_system_shell_navigation_and_services() {
     tap(shell,300,285); // Authenticator home tile
     assert(shell.screen()==SystemScreen::Authenticator);
     assert(shell.state().code_count==1u);
-    assert(std::strcmp(shell.state().codes[0].code,"94287082")==0);
     assert(std::strcmp(shell.state().codes[0].code,"94287082")==0);
 
     tap(shell,60,90); // back to home
