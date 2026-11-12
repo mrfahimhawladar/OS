@@ -93,7 +93,7 @@ The first ARM64 kernel is small enough for a cross-compilation CI job. A full na
 
 **Verified on the QEMU ARM64 reference target:** AArch64 boot/EL1 entry, exception vectors, FDT memory and PL011 discovery, reserved-memory exclusion, physical page allocator, GICv3 initialization, ARM Generic Timer IRQ delivery, EL1 MMU with TTBR1 high-half mapping, independent EL0 address spaces, SVC entry/return, single-core task scheduling, sleep/wakeup, WAITPID, and lower-EL fault isolation.
 
-**Still not implemented:** general IPC/VFS/storage/network services, a boot-time process loader/session manager, QEMU/phone display and touchscreen drivers, a device-connected compositor, trusted credential enrollment/storage, and physical-phone board support.
+**Still not implemented:** general IPC/VFS/storage/network services, a boot-time process loader/session manager, QEMU/phone display and touchscreen drivers, a device-connected compositor, trusted PIN provisioning/Trusted UI, deployment of an OP-TEE Secure World on this OS boot chain, and physical-phone board support.
 
 The existing root-level x86 files and `preview.html` are a separate learning prototype. They are not Fahim OS Mobile.
 
@@ -108,8 +108,9 @@ The native SystemUI layer now includes:
 - A native C++ Lock Screen renderer for clock/date/status, notification cards, shortcuts and the PIN bouncer/keypad.
 - A Lock Screen controller that consumes normalized touch events, verifies PIN through an injected credential backend, and sends verifier-approved state to the kernel SVC gate.
 - A fixed-capacity alpha compositor. The native Lock Screen renderer registers its bitmap as a LOCKSCREEN surface; application surfaces are filtered while the kernel session is locked.
-- A protected-credential backend adapter which fails closed when no trusted backend is connected.
-- CMake tests for framebuffer layout/clipping, calibrated touch, native PIN UI/controller, compositor surface registration, kernel bridge mock and missing-backend rejection.
+- A GlobalPlatform OP-TEE client adapter plus an OP-TEE Trusted Application source for TEE-held HMAC pepper, salted PIN verifier, RPMB credential record and persistent anti-brute-force policy.
+- A fail-closed credential service wrapper; host tests cover enrollment/verification result mapping, persistent lockout mapping and unavailable-TEE behavior.
+- A separate pinned OP-TEE ARM64 Trusted Application build workflow; QEMU/CI compilation does not prove hardware RPMB or a secure clock.
 
 Build and run the SystemUI tests:
 
@@ -117,7 +118,7 @@ Build and run the SystemUI tests:
     cmake --build build/systemui --parallel
     ctest --test-dir build/systemui --output-on-failure
 
-**Still not connected:** QEMU virtio-gpu/ramfb or phone display mapping, QEMU virtio-input or a phone touchscreen driver, a boot-time trusted process/session manager, TEE/hardware-backed credential storage and persistent anti-brute-force state. The framebuffer and touchscreen APIs are ready for platform drivers but do not invent hardware. The credential adapter intentionally fails closed until a real trusted backend exists.
+**Still not connected:** QEMU virtio-gpu/ramfb or phone display mapping, QEMU virtio-input or a phone touchscreen driver, a boot-time trusted process/session manager, OP-TEE Secure World integration into the boot chain, RPMB key/storage provisioning, a TEE-protected system clock, production TA signing/installation and the separate trusted provisioning TA/Trusted UI. `FAHIM_ENABLE_OPTEE_CLIENT` is OFF by default; without a running OP-TEE service the credential service returns unavailable and cannot unlock. The framebuffer and touchscreen APIs still require real platform drivers.
 
 The scheduler gate starts locked. The QEMU self-test now creates a synthetic EL0 task assigned the kernel-only LOCKSCREEN role; it invokes SVC 9 to unlock, after which the four test application tasks are allowed to run. This validates the scheduler-level gate and SVC policy, not production PIN verification or boot-time service launch.
 
