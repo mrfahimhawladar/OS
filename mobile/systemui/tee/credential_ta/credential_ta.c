@@ -639,15 +639,6 @@ TEE_Result TA_InvokeCommandEntryPoint(void *session_context,
         }
     }
 
-    if (command_id == FAHIM_CRED_CMD_ENROLL && !is_trusted_provisioner()) {
-        TEE_Param adapted[4];
-        TEE_MemFill(adapted, 0, sizeof(adapted));
-        adapted[1] = params[1];
-        set_response(adapted, FAHIM_CRED_RESULT_UNAVAILABLE, 0u, 0u, 0u);
-        params[1] = adapted[1];
-        return TEE_SUCCESS;
-    }
-
     if (command_id == FAHIM_CRED_CMD_ENROLL ||
         command_id == FAHIM_CRED_CMD_VERIFY) {
         if (param_types != TEE_PARAM_TYPES(
@@ -657,6 +648,12 @@ TEE_Result TA_InvokeCommandEntryPoint(void *session_context,
             params[0].memref.size > FAHIM_CREDENTIAL_PIN_MAX ||
             params[1].memref.size < sizeof(fahim_credential_response_t))
             return TEE_ERROR_BAD_PARAMETERS;
+
+        if (command_id == FAHIM_CRED_CMD_ENROLL &&
+            !is_trusted_provisioner()) {
+            set_response(params, FAHIM_CRED_RESULT_UNAVAILABLE, 0u, 0u, 0u);
+            return TEE_SUCCESS;
+        }
 
         result = verify_secure_platform();
         if (result != TEE_SUCCESS) {
