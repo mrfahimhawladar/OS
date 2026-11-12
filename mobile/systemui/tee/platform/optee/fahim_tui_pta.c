@@ -72,7 +72,8 @@ __weak TEE_Result fahim_tui_platform_show_status(uint32_t status)
 
 __weak TEE_Result fahim_tui_platform_end(void)
 {
-	return TEE_SUCCESS;
+	/* Missing secure hand-back is not treated as a successful TUI teardown. */
+	return TEE_ERROR_NOT_SUPPORTED;
 }
 
 static TEE_Result open_session(uint32_t param_types __unused,
