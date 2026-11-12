@@ -1,23 +1,31 @@
-Fahim OS native Lock Screen Core — verification report
+Fahim OS Lock Screen and SystemUI verification report
 Date: 2026-11-12
 
-Build system: CMake / GNU C++ 14.2.0 / C++17
-Normal build: PASS
-CTest: 1/1 tests passed
-AddressSanitizer + UndefinedBehaviorSanitizer: PASS
+Verified in GitHub Actions:
+- Native LockScreenCore configure/build: PASS.
+- Native LockScreenCore CTest: 1/1 passed.
+- SystemUI runtime configure: PASS.
+- SystemUI runtime compilation with -Wall -Wextra -Wpedantic -Werror: PASS.
+- Combined CTest: 2/2 passed (lockscreen_core_tests, systemui_runtime_tests).
+- Restored ARM64 kernel cross-build and QEMU boot/self-tests: PASS on the existing single-core QEMU virt target.
 
-Covered behaviors:
-- Starts locked; rejects empty and shorter-than-minimum PIN entries.
-- Accepts a valid PIN through a test-only fake verifier.
-- Clears transient PIN input after verification.
-- Rejects malformed input and caps the input buffer at 16 digits.
-- Five rejected submissions activate a 30-second lockout.
-- Lockout expires using a monotonic clock; the next lockout escalates to 60 seconds.
-- A temporarily unavailable credential verifier fails closed.
+Successful runs:
+- SystemUI runtime: https://github.com/mrfahimhawladar/OS/actions/runs/43133600811
+- ARM64 kernel: https://github.com/mrfahimhawladar/OS/actions/runs/43133211667
 
-Security limitations:
-- Fake verifier is test-only; no production credential verifier or credential store exists.
-- Lockout counters are in-memory only and are not persistent across reboot.
-- No kernel/session gate yet prevents other processes from drawing while locked.
-- The current main branch does not contain a bootable OS runtime, display/framebuffer, input, compositor/window manager, or service-manager integration.
-- This is not a bootable lock screen, ROM, or APK.
+SystemUI tests cover:
+- Locked PIN state, length validation, input-buffer clearing, failed-attempt lockout and expiry.
+- Protected credential adapter fail-closed behavior when no trusted backend is installed.
+- Framebuffer dimension/stride/memory-size validation, clipping, XRGB8888 and RGB565 writes.
+- Touch routing remains on Lock Screen while locked; swipe-up, camera and flashlight shortcuts.
+- Compositor z-order and alpha blend.
+- Application surfaces and app input denied while locked; allowed after verifier-approved unlock.
+
+Not verified / still missing:
+- A real QEMU virtio-gpu/simple-framebuffer device driver and framebuffer mapping.
+- A real QEMU virtio-input or physical phone touchscreen driver feeding the input router.
+- OS window manager/session manager and kernel-enforced process/session lock gate.
+- Trusted production credential storage/TEE backend and persistent lockout policy.
+- Native SystemUI launch from boot, full Lock Screen operation on a device, ROM/APK or flashable image.
+
+The SystemUI and LockScreenCore are tested software components. Passing host CI/QEMU kernel tests does not mean a real device Lock Screen is already active.
