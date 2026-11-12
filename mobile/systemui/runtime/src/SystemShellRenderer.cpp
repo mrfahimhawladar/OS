@@ -6,7 +6,6 @@
 
 namespace fahim::systemui {
 namespace {
-constexpr std::uint32_t C_BG = 0xff080e18u;
 constexpr std::uint32_t C_PANEL = 0xff172335u;
 constexpr std::uint32_t C_PANEL_ALT = 0xff202f43u;
 constexpr std::uint32_t C_TEXT = 0xfff5f7fbu;
@@ -219,26 +218,37 @@ void SystemShellRenderer::render_home(const SystemShellState& state) noexcept {
     base(state, "Home");
     text(scale_pos(28, s), scale_pos(177, s), "YOUR SPACE", 1, C_MUTED);
 
-    const char* names[8] = {
-        "PHONE", "MESSAGES", "PHOTOS", "CAMERA",
-        "MUSIC", "AUTHENTICATOR", "SETTINGS", "ABOUT"
+    const char* names[4] = {
+        "CONTROL CENTER", "AUTHENTICATOR", "SETTINGS", "ABOUT"
     };
-    const std::uint32_t colors[8] = {
-        0xff35a86b,0xff3f83d7,0xffa96fd3,0xffd08055,
-        0xffbd5a70,0xff397cc5,0xff6e7e96,0xff526e91
+    const std::uint32_t colors[4] = {
+        0xff3f78b9u,0xff397cc5u,0xff6e7e96u,0xff526e91u
     };
-    for (std::size_t i = 0; i < 8u; ++i) {
-        const std::int32_t col = static_cast<std::int32_t>(i % 4u);
-        const std::int32_t row = static_cast<std::int32_t>(i / 4u);
-        const std::int32_t x = 25 + col * 104;
-        const std::int32_t y = 220 + row * 160;
+    for (std::size_t i = 0; i < 4u; ++i) {
+        const std::int32_t col = static_cast<std::int32_t>(i % 2u);
+        const std::int32_t row = static_cast<std::int32_t>(i / 2u);
+        const std::int32_t x = 24 + col * 204;
+        const std::int32_t y = 220 + row * 170;
         round_rect({scale_pos(x, s), scale_pos(y, s),
-                    scale_dim(78, s), scale_dim(78, s)},
-                   scale_pos(22, s), colors[i]);
-        circle(scale_pos(x + 39, s), scale_pos(y + 39, s),
-               scale_pos(18, s), 0x55ffffffu);
-        text(scale_pos(x + 7, s), scale_pos(y + 92, s), names[i], 1, C_TEXT);
+                    scale_dim(188, s), scale_dim(138, s)},
+                   scale_pos(24, s), C_PANEL);
+        round_rect({scale_pos(x + 14, s), scale_pos(y + 13, s),
+                    scale_dim(58, s), scale_dim(58, s)},
+                   scale_pos(18, s), colors[i]);
+        circle(scale_pos(x + 43, s), scale_pos(y + 42, s),
+               scale_pos(13, s), 0x55ffffffu);
+        text(scale_pos(x + 14, s), scale_pos(y + 98, s), names[i], 1, C_TEXT);
     }
+    round_rect({scale_pos(18, s), scale_pos(615, s),
+                scale_dim(404, s), scale_dim(110, s)},
+               scale_pos(26, s), 0x99566b82u);
+    text(scale_pos(38, s), scale_pos(647, s), "FAHIM OS SYSTEM", 1, C_MUTED);
+    text(scale_pos(38, s), scale_pos(678, s),
+         state.services_available ? "PLATFORM SERVICES CONNECTED" : "PLATFORM SERVICES OFFLINE",
+         1, state.services_available ? C_GREEN : C_ORANGE);
+    text(scale_pos(24, s), scale_pos(765, s), "SWIPE DOWN FOR CONTROL CENTER", 1, C_MUTED);
+    round_rect({scale_pos(144, s), scale_pos(858, s),
+                scale_dim(152, s), scale_dim(6, s)}, scale_pos(3, s), C_TEXT);
     round_rect({scale_pos(18, s), scale_pos(625, s),
                 scale_dim(404, s), scale_dim(100, s)},
                scale_pos(30, s), 0x99566b82u);
@@ -396,11 +406,10 @@ SystemShellRenderer::Hit SystemShellRenderer::hit_test(
 
     switch (screen) {
         case SystemScreen::Home:
-            if (in(129, 380, 207, 458)) return Hit::OpenAuthenticator;
-            if (in(233, 380, 311, 458)) return Hit::OpenSettings;
-            if (in(337, 380, 415, 458)) return Hit::OpenAbout;
-            if (in(20, 620, 220, 745)) return Hit::OpenSettings;
-            if (in(220, 620, 420, 745)) return Hit::OpenAuthenticator;
+            if (in(24, 220, 212, 358)) return Hit::OpenControlCenter;
+            if (in(228, 220, 416, 358)) return Hit::OpenAuthenticator;
+            if (in(24, 390, 212, 528)) return Hit::OpenSettings;
+            if (in(228, 390, 416, 528)) return Hit::OpenAbout;
             return Hit::None;
         case SystemScreen::ControlCenter:
             if (in(22,205,214,311)) return Hit::ToggleWifi;
