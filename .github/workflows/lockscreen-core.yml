@@ -4,7 +4,9 @@ on:
   push:
     branches: [main]
     paths:
-      - "mobile/systemui/lockscreen/native/**"
+      - "mobile/systemui/lockscreen/native/**
+      - "mobile/systemui/runtime/**"
+      - "mobile/systemui/CMakeLists.txt""
       - ".github/workflows/lockscreen-core.yml"
   pull_request:
     paths:
@@ -28,10 +30,10 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Configure native component
-        run: cmake -S mobile/systemui/lockscreen/native -B build/lockscreen-core
+        run: cmake -S mobile/systemui -B build/systemui
 
       - name: Build native component
-        run: cmake --build build/lockscreen-core --parallel 2
+        run: cmake --build build/systemui --parallel 2
 
       - name: Run tests
-        run: ctest --test-dir build/lockscreen-core --output-on-failure
+        run: ctest --test-dir build/systemui --output-on-failure
