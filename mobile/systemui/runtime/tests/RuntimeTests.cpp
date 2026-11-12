@@ -1,5 +1,6 @@
 #include "fahim/security/CredentialBackend.hpp"
 #include "fahim/security/KernelSessionControl.hpp"
+#include "fahim/input/InputDevice.hpp"
 #include "fahim/ui/Compositor.hpp"
 #include "fahim/ui/InputRouter.hpp"
 #include "fahim/ui/SessionGate.hpp"
