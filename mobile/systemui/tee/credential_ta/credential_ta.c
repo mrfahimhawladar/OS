@@ -85,7 +85,7 @@ static bool is_trusted_provisioner(void)
 static TEE_Result verify_secure_platform(void)
 {
     uint32_t rollback_level = 0u;
-    uint32_t persistent_time_level = 0u;
+    uint32_t system_time_level = 0u;
     TEE_Result result;
 
     /*
@@ -224,18 +224,6 @@ cleanup:
     return result;
 }
 
-static int constant_time_equal(
-    const uint8_t *left, const uint8_t *right, size_t length)
-{
-    volatile uint8_t difference = 0u;
-    size_t i;
-
-    for (i = 0u; i < length; ++i)
-        difference = (uint8_t)(difference | (left[i] ^ right[i]));
-
-    return difference == 0u;
-}
-
 static TEE_Result load_record(TEE_ObjectHandle *handle,
                               credential_record_t *record)
 {
@@ -285,7 +273,7 @@ static TEE_Result save_record(TEE_ObjectHandle handle,
 {
     TEE_Result result;
 
-    /* Trusted Storage Write is atomic; the fixed-size record is replaced in one write. */
+    /* A storage failure is fail-closed; a malformed record is rejected on reload. */
     result = TEE_SeekObjectData(handle, 0, TEE_DATA_SEEK_SET);
     if (result != TEE_SUCCESS)
         return result;
@@ -519,7 +507,7 @@ static TEE_Result verify_credential(TEE_Param params[4])
         goto unavailable;
 
     matches = length == record.pin_length &&
-        constant_time_equal(candidate, record.verifier, sizeof(candidate));
+        TEE_MemCompare(candidate, record.verifier, sizeof(candidate)) == 0;
 
     record.last_seen_ms = now_ms;
     if (matches) {
