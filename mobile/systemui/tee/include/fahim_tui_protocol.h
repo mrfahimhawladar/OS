@@ -20,7 +20,8 @@
 enum fahim_tui_command {
     FAHIM_TUI_CMD_BEGIN = 1u,
     FAHIM_TUI_CMD_READ_PIN = 2u,
-    FAHIM_TUI_CMD_END = 3u
+    FAHIM_TUI_CMD_END = 3u,
+    FAHIM_TUI_CMD_SHOW_STATUS = 4u
 };
 
 enum fahim_tui_prompt {
