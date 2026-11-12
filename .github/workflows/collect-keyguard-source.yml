@@ -17,11 +17,11 @@ concurrency:
 
 jobs:
   collect:
-    name: Collect focused SystemUI source
+    name: Collect focused Keyguard and lock-screen source
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
-      - name: Download focused Official AOSP source archives
+      - name: Download focused Official AOSP source directories
         shell: bash
         run: |
           set -euo pipefail
@@ -34,8 +34,7 @@ jobs:
             local project="$1"
             local subpath="$2"
             local destination="$3"
-            local url="https://android.googlesource.com/"
-            url+="$project/+archive/$REF"
+            local url="https://android.googlesource.com/$project/+archive/$REF"
 
             if [[ -n "$subpath" ]]; then
               url+="/$subpath"
@@ -45,7 +44,7 @@ jobs:
             mkdir -p "$destination"
             local archive="/tmp/$(echo "$project-$subpath" | tr '/ ' '__').tar.gz"
 
-            echo "Downloading: $url"
+            echo "Downloading official source: $project/$subpath"
             curl --fail --location --show-error --silent \
               --retry 4 --retry-all-errors --connect-timeout 20 --max-time 600 \
               "$url" --output "$archive"
@@ -55,14 +54,57 @@ jobs:
             rm -f "$archive"
           }
 
-          # Complete SystemUI module subtree: Keyguard source, UI resources,
-          # Android.bp and module metadata are kept together.
+          download_gitiles_file() {
+            local project="$1"
+            local path="$2"
+            local destination="$3"
+            local url="https://android.googlesource.com/$project/+/$REF/$path?format=TEXT"
+            local encoded="/tmp/$(echo "$project-$path" | tr '/ ' '__').b64"
+
+            mkdir -p "$(dirname "$destination")"
+            echo "Downloading build metadata: $project/$path"
+            curl --fail --location --show-error --silent \
+              --retry 4 --retry-all-errors --connect-timeout 20 --max-time 120 \
+              "$url" --output "$encoded"
+            base64 --decode "$encoded" > "$destination"
+            rm -f "$encoded"
+          }
+
+          # Keyguard's lock-screen state, UI, and view-model source.
           download_gitiles_archive \
             "platform/frameworks/base" \
-            "packages/SystemUI" \
-            "$ROOT/frameworks/base/packages/SystemUI"
+            "packages/SystemUI/src/com/android/systemui/keyguard" \
+            "$ROOT/frameworks/base/packages/SystemUI/src/com/android/systemui/keyguard"
 
-          # Shared source libraries referenced by SystemUI.
+          # PIN, password, pattern, clock, carrier and security-entry UI.
+          download_gitiles_archive \
+            "platform/frameworks/base" \
+            "packages/SystemUI/src/com/android/keyguard" \
+            "$ROOT/frameworks/base/packages/SystemUI/src/com/android/keyguard"
+
+          # Lock-screen bouncer, biometrics and clock UI modules.
+          download_gitiles_archive \
+            "platform/frameworks/base" \
+            "packages/SystemUI/src/com/android/systemui/bouncer" \
+            "$ROOT/frameworks/base/packages/SystemUI/src/com/android/systemui/bouncer"
+
+          download_gitiles_archive \
+            "platform/frameworks/base" \
+            "packages/SystemUI/src/com/android/systemui/biometrics" \
+            "$ROOT/frameworks/base/packages/SystemUI/src/com/android/systemui/biometrics"
+
+          download_gitiles_archive \
+            "platform/frameworks/base" \
+            "packages/SystemUI/src/com/android/systemui/clock" \
+            "$ROOT/frameworks/base/packages/SystemUI/src/com/android/systemui/clock"
+
+          # Native layouts, drawables, dimensions and strings used by Keyguard.
+          download_gitiles_archive \
+            "platform/frameworks/base" \
+            "packages/SystemUI/res-keyguard" \
+            "$ROOT/frameworks/base/packages/SystemUI/res-keyguard"
+
+          # The first-level shared libraries referenced by SystemUI's build rules.
           download_gitiles_archive \
             "platform/frameworks/libs/systemui" \
             "" \
@@ -73,30 +115,54 @@ jobs:
             "" \
             "$ROOT/frameworks/libs/modules-utils"
 
-          cat > "$ROOT/SOURCE-INFO.txt" <<'EOF'
-          Android release: android17-release
-          Upstream: Official Android Open Source Project (AOSP)
-          Retrieval: Google Gitiles directory archives
-          Included:
-            - platform/frameworks/base/packages/SystemUI
+          # Preserve the exact module metadata needed to inspect transitive deps.
+          download_gitiles_file \
+            "platform/frameworks/base" \
+            "packages/SystemUI/Android.bp" \
+            "$ROOT/frameworks/base/packages/SystemUI/Android.bp"
+
+          download_gitiles_file \
+            "platform/frameworks/base" \
+            "packages/SystemUI/AndroidManifest.xml" \
+            "$ROOT/frameworks/base/packages/SystemUI/AndroidManifest.xml"
+
+          cat > "$ROOT/SOURCE-INFO.txt" <<EOF
+          Android release branch: android17-release
+          Upstream: Official Android Open Source Project (AOSP) at android.googlesource.com
+          Retrieved at (UTC): $(date -u +%FT%TZ)
+
+          Focused source included:
+            - platform/frameworks/base/packages/SystemUI/src/com/android/systemui/keyguard
+            - platform/frameworks/base/packages/SystemUI/src/com/android/keyguard
+            - platform/frameworks/base/packages/SystemUI/src/com/android/systemui/bouncer
+            - platform/frameworks/base/packages/SystemUI/src/com/android/systemui/biometrics
+            - platform/frameworks/base/packages/SystemUI/src/com/android/systemui/clock
+            - platform/frameworks/base/packages/SystemUI/res-keyguard
+            - platform/frameworks/base/packages/SystemUI/Android.bp
+            - platform/frameworks/base/packages/SystemUI/AndroidManifest.xml
             - platform/frameworks/libs/systemui
             - platform/frameworks/libs/modules-utils
 
           Scope:
-            Focused source snapshot for Keyguard/Lock Screen study.
+            Keyguard and lock-screen UI source plus first-level shared libraries.
             This is not a complete AOSP checkout and is not independently buildable.
-            Android.bp and source imports must be inspected to resolve further
-            transitive platform dependencies before any build.
+            Android.bp references must be followed to resolve further transitive
+            dependencies only when required for native integration/building.
           EOF
 
           echo "Collected source sizes:"
-          du -sh "$ROOT/frameworks/base/packages/SystemUI" \
+          du -sh "$ROOT/frameworks/base/packages/SystemUI/src/com/android/systemui/keyguard" \
+                 "$ROOT/frameworks/base/packages/SystemUI/src/com/android/keyguard" \
+                 "$ROOT/frameworks/base/packages/SystemUI/src/com/android/systemui/bouncer" \
+                 "$ROOT/frameworks/base/packages/SystemUI/src/com/android/systemui/biometrics" \
+                 "$ROOT/frameworks/base/packages/SystemUI/src/com/android/systemui/clock" \
+                 "$ROOT/frameworks/base/packages/SystemUI/res-keyguard" \
                  "$ROOT/frameworks/libs/systemui" \
                  "$ROOT/frameworks/libs/modules-utils"
           echo "Total:"
           du -sh "$ROOT"
 
-      - name: Package source snapshot
+      - name: Package focused source snapshot
         shell: bash
         run: |
           set -euo pipefail
