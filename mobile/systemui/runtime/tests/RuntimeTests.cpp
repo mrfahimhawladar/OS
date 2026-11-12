@@ -299,7 +299,7 @@ static void test_native_lock_screen_renderer_and_controller() {
     assert(tap(184, 281, 70)); // 6
     assert(tap(120, 331, 80)); // 8
     assert(core.input_length() == 4u);
-    assert(tap(120, 442, 90)); // Unlock
+    assert(!tap(120, 442, 90)); // Unlock hands control to the app session
 
     assert(core.state() == LockState::Unlocked);
     assert(!controller.bouncer_open());
