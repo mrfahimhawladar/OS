@@ -134,4 +134,4 @@ The native C++ System Shell now includes:
 - About/device capability page.
 - Kernel SYSTEM_SHELL scheduler role, blocked while the session is locked.
 
-These are native OS runtime components compiled into the SystemUI library. They are not a booted phone UI yet: process manager/ELF loader, QEMU/POCO display and touchscreen drivers, live platform-service providers and a secure TOTP-vault TA remain unconnected. No Android Activity or screenshot is used as the operating-system implementation.
+These are native OS runtime components compiled into the SystemUI library. They are not boot-active in the QEMU graphical environment yet: the process manager/ELF loader, QEMU virtual display/input drivers, live platform-service providers and secure TOTP-vault TA remain unconnected. No Android Activity or screenshot is used as the operating-system implementation.
