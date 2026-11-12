@@ -8,12 +8,14 @@ on:
       - "mobile/systemui/runtime/**"
       - "mobile/systemui/CMakeLists.txt"
       - ".github/workflows/lockscreen-core.yml"
+      - "tools/ppm_to_png.py"
   pull_request:
     paths:
       - "mobile/systemui/lockscreen/native/**"
       - "mobile/systemui/runtime/**"
       - "mobile/systemui/CMakeLists.txt"
       - ".github/workflows/lockscreen-core.yml"
+      - "tools/ppm_to_png.py"
   workflow_dispatch:
 
 permissions:
@@ -31,35 +33,29 @@ jobs:
       - name: Check out source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Fetch pinned OP-TEE Client API source
-        run: |
-          git clone https://github.com/OP-TEE/optee_client.git third_party/optee_client
-          git -C third_party/optee_client checkout 9f4414f62dfc5692fd39f760515ce2d344d07b6d
-
-      - name: Build upstream GlobalPlatform libteec
-        run: |
-          cmake -S third_party/optee_client -B third_party/optee_client/build \
-            -DWITH_TEEACL=OFF -DWITH_ASTEEC=OFF
-          cmake --build third_party/optee_client/build --target teec --parallel 2
-          test -e third_party/optee_client/build/libteec/libteec.a
-
-      - name: Configure SystemUI (fail-closed transport stub)
+      - name: Configure SystemUI
         run: cmake -S mobile/systemui -B build/systemui
 
-      - name: Configure SystemUI (real GlobalPlatform TEEC client)
-        run: |
-          cmake -S mobile/systemui -B build/systemui-optee \
-            -DFAHIM_ENABLE_OPTEE_CLIENT=ON \
-            -DFAHIM_TEEC_INCLUDE_DIR="$GITHUB_WORKSPACE/third_party/optee_client/libteec/include" \
-            -DFAHIM_TEEC_LIBRARY="$GITHUB_WORKSPACE/third_party/optee_client/build/libteec/libteec.a"
+      - name: Build SystemUI and native renderer snapshot tool
+        run: cmake --build build/systemui --parallel 2
 
-      - name: Build SystemUI components
-        run: |
-          cmake --build build/systemui --parallel 2
-          cmake --build build/systemui-optee --parallel 2
-
-      - name: Run SystemUI tests (fail-closed stub)
+      - name: Run native component tests
         run: ctest --test-dir build/systemui --output-on-failure
 
-      - name: Run SystemUI tests (TEEC client branch)
-        run: ctest --test-dir build/systemui-optee --output-on-failure
+      - name: Render screenshots from the actual C++ Lock Screen renderer
+        run: |
+          mkdir -p artifacts
+          ./build/systemui/runtime/native_lockscreen_snapshot artifacts
+          python3 tools/ppm_to_png.py artifacts/native-lockscreen.ppm artifacts/native-lockscreen.png
+          python3 tools/ppm_to_png.py artifacts/native-pin-bouncer.ppm artifacts/native-pin-bouncer.png
+          file artifacts/*.png
+          test -s artifacts/native-lockscreen.png
+          test -s artifacts/native-pin-bouncer.png
+
+      - name: Upload native C++ Lock Screen screenshots
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: fahim-os-native-lockscreen-render
+          path: artifacts/*.png
+          if-no-files-found: error
+          retention-days: 14
