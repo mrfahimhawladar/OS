@@ -11,6 +11,8 @@
 #define FAHIM_SYS_SLEEP 5u
 #define FAHIM_SYS_WAITPID 6u
 #define FAHIM_SYS_WRITE 7u
+#define FAHIM_SYS_GET_SESSION_LOCKED 8u
+#define FAHIM_SYS_SET_SESSION_LOCKED 9u
 
 void fahim_syscall_dispatch(uint64_t *saved_registers);
 
