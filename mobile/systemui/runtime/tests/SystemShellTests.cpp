@@ -122,7 +122,6 @@ static void test_native_system_shell_navigation_and_services() {
         {framebuffer.data(),framebuffer.size(),width,height,width*4u,
          fahim::ui::PixelFormat::XRGB8888});
     TestCredential verifier;
-    fahim::systemui::LockScreenCore core(verifier);
     auto now=fahim::systemui::LockScreenCore::TimePoint{};
     fahim::systemui::LockScreenCore pin_core(verifier,[&now]{return now;});
     // Start in unlocked state for this system-shell test.
@@ -147,7 +146,7 @@ static void test_native_system_shell_navigation_and_services() {
     assert(shell.render());
     assert(compositor.surface_count()==1u);
 
-    tap(shell,160,260); // Authenticator home tile
+    tap(shell,160,420); // Authenticator home tile
     assert(shell.screen()==SystemScreen::Authenticator);
     assert(shell.state().code_count==1u);
     assert(std::strcmp(shell.state().codes[0].code,"94287082")==0);
