@@ -247,4 +247,7 @@ std::chrono::milliseconds TeeProtectedCredentialBackend::lockout_remaining() con
     return std::chrono::milliseconds(static_cast<std::int64_t>(bounded));
 }
 
+TeeCredentialService::TeeCredentialService() noexcept
+    : transport_(), backend_(&transport_), verifier_(&backend_) {}
+
 }  // namespace fahim::security
