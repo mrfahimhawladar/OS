@@ -6,15 +6,6 @@
 
 namespace fahim::systemui {
 namespace {
-constexpr std::uint32_t C_PANEL = 0xff172335u;
-constexpr std::uint32_t C_PANEL_ALT = 0xff202f43u;
-constexpr std::uint32_t C_TEXT = 0xfff5f7fbu;
-constexpr std::uint32_t C_MUTED = 0xff9eafc3u;
-constexpr std::uint32_t C_ACCENT = 0xffb6d9ffu;
-constexpr std::uint32_t C_GREEN = 0xff74d6a2u;
-constexpr std::uint32_t C_ORANGE = 0xffffc779u;
-constexpr std::uint32_t C_RED = 0xffff8e98u;
-
 std::uint32_t scale_dim(std::uint32_t value, float scale) noexcept {
     return static_cast<std::uint32_t>(static_cast<float>(value) * scale);
 }
@@ -173,39 +164,53 @@ void SystemShellRenderer::base(const SystemShellState& state,
     for (std::uint32_t y = 0; y < height_; ++y) {
         const std::uint32_t mix = static_cast<std::uint32_t>(
             static_cast<std::uint64_t>(y) * 28u / std::max(1u, height_ - 1u));
-        const std::uint32_t color = 0xff000000u |
-            ((8u + mix / 3u) << 16u) | ((14u + mix / 2u) << 8u) | (24u + mix);
+        const std::uint32_t red = light_theme_ ? 246u - mix / 3u : 8u + mix / 3u;
+        const std::uint32_t green = light_theme_ ? 248u - mix / 2u : 14u + mix / 2u;
+        const std::uint32_t blue = light_theme_ ? 252u - mix : 24u + mix;
+        const std::uint32_t color = 0xff000000u | (red << 16u) | (green << 8u) | blue;
         auto* row = pixels_ + static_cast<std::size_t>(y) * width_;
         std::fill(row, row + width_, color);
     }
     text(scale_pos(22, scale), scale_pos(23, scale), state.status.time,
-         std::max(1, scale_pos(1, scale)), C_TEXT);
-    text(scale_pos(310, scale), scale_pos(23, scale),
-         state.status.battery_valid ? "BATTERY" : "NO BATTERY",
-         std::max(1, scale_pos(1, scale)), C_MUTED);
+         std::max(1, scale_pos(1, scale)), text_color_);
+    text(scale_pos(150, scale), scale_pos(23, scale), state.status.network,
+         std::max(1, scale_pos(1, scale)), muted_color_);
+    char battery[5] = {'-', '-', '%', '\\0', '\\0'};
+    if (state.status.battery_valid) {
+        const unsigned percent = state.status.battery_percent > 100u
+            ? 100u : state.status.battery_percent;
+        if (percent == 100u) {
+            battery[0] = '1'; battery[1] = '0'; battery[2] = '0'; battery[3] = '%';
+        } else {
+            battery[0] = static_cast<char>('0' + (percent / 10u));
+            battery[1] = static_cast<char>('0' + (percent % 10u));
+        }
+    }
+    text(scale_pos(375, scale), scale_pos(23, scale), battery,
+         std::max(1, scale_pos(1, scale)), text_color_);
     round_rect({scale_pos(22, scale), scale_pos(60, scale),
                 scale_dim(396, scale), scale_dim(72, scale)},
-               scale_pos(22, scale), C_PANEL);
-    text(scale_pos(42, scale), scale_pos(83, scale), title, 2, C_TEXT);
+               scale_pos(22, scale), panel_color_);
+    text(scale_pos(42, scale), scale_pos(83, scale), title, 2, text_color_);
     text(scale_pos(42, scale), scale_pos(111, scale),
-         state.status.date, 1, C_MUTED);
+         state.status.date, 1, muted_color_);
     if (!state.services_available) {
         text(scale_pos(22, scale), scale_pos(154, scale),
-             "SYSTEM SERVICES OFFLINE", 1, C_ORANGE);
+             "SYSTEM SERVICES OFFLINE", 1, orange_color_);
     }
     if (state.notice != nullptr) {
         round_rect({scale_pos(22, scale), scale_pos(800, scale),
                     scale_dim(396, scale), scale_dim(54, scale)},
-                   scale_pos(16, scale), C_PANEL_ALT);
+                   scale_pos(16, scale), panel_alt_color_);
         text(scale_pos(36, scale), scale_pos(824, scale),
-             state.notice, 1, C_ORANGE);
+             state.notice, 1, orange_color_);
     }
 }
 
 void SystemShellRenderer::render_home(const SystemShellState& state) noexcept {
     const float s = static_cast<float>(width_) / 440.0f;
     base(state, "Home");
-    text(scale_pos(28, s), scale_pos(177, s), "YOUR SPACE", 1, C_MUTED);
+    text(scale_pos(28, s), scale_pos(177, s), "YOUR SPACE", 1, muted_color_);
 
     const char* names[4] = {
         "CONTROL CENTER", "AUTHENTICATOR", "SETTINGS", "ABOUT"
@@ -220,38 +225,38 @@ void SystemShellRenderer::render_home(const SystemShellState& state) noexcept {
         const std::int32_t y = 220 + row * 170;
         round_rect({scale_pos(x, s), scale_pos(y, s),
                     scale_dim(188, s), scale_dim(138, s)},
-                   scale_pos(24, s), C_PANEL);
+                   scale_pos(24, s), panel_color_);
         round_rect({scale_pos(x + 14, s), scale_pos(y + 13, s),
                     scale_dim(58, s), scale_dim(58, s)},
                    scale_pos(18, s), colors[i]);
         circle(scale_pos(x + 43, s), scale_pos(y + 42, s),
                scale_pos(13, s), 0x55ffffffu);
-        text(scale_pos(x + 14, s), scale_pos(y + 98, s), names[i], 1, C_TEXT);
+        text(scale_pos(x + 14, s), scale_pos(y + 98, s), names[i], 1, text_color_);
     }
     round_rect({scale_pos(18, s), scale_pos(615, s),
                 scale_dim(404, s), scale_dim(110, s)},
                scale_pos(26, s), 0x99566b82u);
-    text(scale_pos(38, s), scale_pos(647, s), "FAHIM OS SYSTEM", 1, C_MUTED);
+    text(scale_pos(38, s), scale_pos(647, s), "FAHIM OS SYSTEM", 1, muted_color_);
     text(scale_pos(38, s), scale_pos(678, s),
          state.services_available ? "PLATFORM SERVICES CONNECTED" : "PLATFORM SERVICES OFFLINE",
-         1, state.services_available ? C_GREEN : C_ORANGE);
-    text(scale_pos(24, s), scale_pos(765, s), "SWIPE DOWN FOR CONTROL CENTER", 1, C_MUTED);
+         1, state.services_available ? green_color_ : orange_color_);
+    text(scale_pos(24, s), scale_pos(765, s), "SWIPE DOWN FOR CONTROL CENTER", 1, muted_color_);
     round_rect({scale_pos(144, s), scale_pos(858, s),
-                scale_dim(152, s), scale_dim(6, s)}, scale_pos(3, s), C_TEXT);
+                scale_dim(152, s), scale_dim(6, s)}, scale_pos(3, s), text_color_);
     round_rect({scale_pos(18, s), scale_pos(625, s),
                 scale_dim(404, s), scale_dim(100, s)},
                scale_pos(30, s), 0x99566b82u);
-    text(scale_pos(38, s), scale_pos(655, s), "QUICK ACCESS", 1, C_MUTED);
-    text(scale_pos(38, s), scale_pos(685, s), "SETTINGS   AUTHENTICATOR", 1, C_TEXT);
-    text(scale_pos(24, s), scale_pos(765, s), "SWIPE DOWN FOR CONTROL CENTER", 1, C_MUTED);
+    text(scale_pos(38, s), scale_pos(655, s), "QUICK ACCESS", 1, muted_color_);
+    text(scale_pos(38, s), scale_pos(685, s), "SETTINGS   AUTHENTICATOR", 1, text_color_);
+    text(scale_pos(24, s), scale_pos(765, s), "SWIPE DOWN FOR CONTROL CENTER", 1, muted_color_);
     round_rect({scale_pos(144, s), scale_pos(858, s),
-                scale_dim(152, s), scale_dim(6, s)}, scale_pos(3, s), C_TEXT);
+                scale_dim(152, s), scale_dim(6, s)}, scale_pos(3, s), text_color_);
 }
 
 void SystemShellRenderer::render_control_center(const SystemShellState& state) noexcept {
     const float s = static_cast<float>(width_) / 440.0f;
     base(state, "Control Center");
-    text(scale_pos(28, s), scale_pos(177, s), "CONNECTIVITY", 1, C_MUTED);
+    text(scale_pos(28, s), scale_pos(177, s), "CONNECTIVITY", 1, muted_color_);
     const struct Tile { const char* label; bool enabled; std::int32_t x; std::int32_t y; } tiles[] = {
         {"WI-FI", state.status.wifi_enabled, 22, 205},
         {"BLUETOOTH", state.status.bluetooth_enabled, 226, 205},
@@ -261,34 +266,34 @@ void SystemShellRenderer::render_control_center(const SystemShellState& state) n
     for (const auto& tile : tiles) {
         round_rect({scale_pos(tile.x, s), scale_pos(tile.y, s),
                     scale_dim(192, s), scale_dim(106, s)},
-                   scale_pos(22, s), tile.enabled ? 0xff345477u : C_PANEL);
+                   scale_pos(22, s), tile.enabled ? 0xff345477u : panel_color_);
         circle(scale_pos(tile.x + 28, s), scale_pos(tile.y + 30, s),
-               scale_pos(9, s), tile.enabled ? C_ACCENT : C_MUTED);
-        text(scale_pos(tile.x + 17, s), scale_pos(tile.y + 70, s), tile.label, 1, C_TEXT);
+               scale_pos(9, s), tile.enabled ? accent_color_ : muted_color_);
+        text(scale_pos(tile.x + 17, s), scale_pos(tile.y + 70, s), tile.label, 1, text_color_);
         text(scale_pos(tile.x + 144, s), scale_pos(tile.y + 28, s),
-             tile.enabled ? "ON" : "OFF", 1, tile.enabled ? C_GREEN : C_MUTED);
+             tile.enabled ? "ON" : "OFF", 1, tile.enabled ? green_color_ : muted_color_);
     }
 
-    text(scale_pos(28, s), scale_pos(488, s), "DISPLAY BRIGHTNESS", 1, C_MUTED);
+    text(scale_pos(28, s), scale_pos(488, s), "DISPLAY BRIGHTNESS", 1, muted_color_);
     round_rect({scale_pos(22, s), scale_pos(515, s),
-                scale_dim(396, s), scale_dim(94, s)}, scale_pos(22, s), C_PANEL);
+                scale_dim(396, s), scale_dim(94, s)}, scale_pos(22, s), panel_color_);
     round_rect({scale_pos(44, s), scale_pos(555, s),
-                scale_dim(352, s), scale_dim(10, s)}, scale_pos(5, s), C_PANEL_ALT);
+                scale_dim(352, s), scale_dim(10, s)}, scale_pos(5, s), panel_alt_color_);
     if (state.services_available) {
         const auto w = std::max<std::uint32_t>(1u,
             scale_dim(352u * state.status.brightness_percent / 100u, s));
         round_rect({scale_pos(44, s), scale_pos(555, s), w, scale_dim(10, s)},
-                   scale_pos(5, s), C_ACCENT);
+                   scale_pos(5, s), accent_color_);
     }
     text(scale_pos(32, s), scale_pos(578, s),
          state.services_available ? "BRIGHTNESS AVAILABLE" : "BRIGHTNESS SERVICE OFFLINE",
-         1, C_MUTED);
+         1, muted_color_);
 
     round_rect({scale_pos(22, s), scale_pos(640, s),
-                scale_dim(396, s), scale_dim(92, s)}, scale_pos(22, s), C_PANEL);
-    text(scale_pos(42, s), scale_pos(673, s), "SYSTEM SETTINGS", 1, C_TEXT);
-    text(scale_pos(42, s), scale_pos(703, s), "OPEN SETTINGS TO CONFIGURE DEVICE", 1, C_MUTED);
-    text(scale_pos(22, s), scale_pos(770, s), "SWIPE UP TO CLOSE", 1, C_MUTED);
+                scale_dim(396, s), scale_dim(92, s)}, scale_pos(22, s), panel_color_);
+    text(scale_pos(42, s), scale_pos(673, s), "SYSTEM SETTINGS", 1, text_color_);
+    text(scale_pos(42, s), scale_pos(703, s), "OPEN SETTINGS TO CONFIGURE DEVICE", 1, muted_color_);
+    text(scale_pos(22, s), scale_pos(770, s), "SWIPE UP TO CLOSE", 1, muted_color_);
 }
 
 void SystemShellRenderer::render_settings(const SystemShellState& state) noexcept {
@@ -308,52 +313,56 @@ void SystemShellRenderer::render_settings(const SystemShellState& state) noexcep
     for (std::size_t i = 0; i < 6u; ++i) {
         const std::int32_t y = 180 + static_cast<std::int32_t>(i) * 96;
         round_rect({scale_pos(22, s), scale_pos(y, s),
-                    scale_dim(396, s), scale_dim(78, s)}, scale_pos(17, s), C_PANEL);
+                    scale_dim(396, s), scale_dim(78, s)}, scale_pos(17, s), panel_color_);
         circle(scale_pos(44, s), scale_pos(y + 39, s), scale_pos(8, s),
-               i == 5u ? C_RED : C_ACCENT);
-        text(scale_pos(66, s), scale_pos(y + 28, s), labels[i], 1, C_TEXT);
-        text(scale_pos(66, s), scale_pos(y + 51, s), details[i], 1, C_MUTED);
-        text(scale_pos(385, s), scale_pos(y + 39, s), ">", 1, C_MUTED);
+               i == 5u ? red_color_ : accent_color_);
+        text(scale_pos(66, s), scale_pos(y + 28, s), labels[i], 1, text_color_);
+        text(scale_pos(66, s), scale_pos(y + 51, s), details[i], 1, muted_color_);
+        text(scale_pos(385, s), scale_pos(y + 39, s), ">", 1, muted_color_);
     }
 }
 
 void SystemShellRenderer::render_authenticator(const SystemShellState& state) noexcept {
     const float s = static_cast<float>(width_) / 440.0f;
     base(state, "Authenticator");
-    text(scale_pos(28, s), scale_pos(177, s), "TIME-BASED ONE-TIME CODES", 1, C_MUTED);
+    text(scale_pos(28, s), scale_pos(177, s), "TIME-BASED ONE-TIME CODES", 1, muted_color_);
     if (!state.vault_available) {
         round_rect({scale_pos(22, s), scale_pos(220, s),
-                    scale_dim(396, s), scale_dim(170, s)}, scale_pos(24, s), C_PANEL);
-        circle(scale_pos(220, s), scale_pos(270, s), scale_pos(17, s), C_ORANGE);
-        text(scale_pos(44, s), scale_pos(320, s), "SECURE VAULT UNAVAILABLE", 1, C_TEXT);
-        text(scale_pos(44, s), scale_pos(348, s), "NO ACCOUNT DATA IS SHOWN", 1, C_MUTED);
+                    scale_dim(396, s), scale_dim(170, s)}, scale_pos(24, s), panel_color_);
+        circle(scale_pos(220, s), scale_pos(270, s), scale_pos(17, s), orange_color_);
+        text(scale_pos(44, s), scale_pos(320, s), "SECURE VAULT UNAVAILABLE", 1, text_color_);
+        text(scale_pos(44, s), scale_pos(348, s), "NO ACCOUNT DATA IS SHOWN", 1, muted_color_);
     } else if (state.code_count == 0u) {
         round_rect({scale_pos(22, s), scale_pos(220, s),
-                    scale_dim(396, s), scale_dim(170, s)}, scale_pos(24, s), C_PANEL);
-        text(scale_pos(44, s), scale_pos(274, s), "NO ACCOUNTS ENROLLED", 1, C_TEXT);
-        text(scale_pos(44, s), scale_pos(306, s), "ADD AN ACCOUNT USING SECURE UI", 1, C_MUTED);
+                    scale_dim(396, s), scale_dim(170, s)}, scale_pos(24, s), panel_color_);
+        text(scale_pos(44, s), scale_pos(274, s), "NO ACCOUNTS ENROLLED", 1, text_color_);
+        text(scale_pos(44, s), scale_pos(306, s), "ADD AN ACCOUNT USING SECURE UI", 1, muted_color_);
     } else {
         for (std::size_t i = 0; i < state.code_count; ++i) {
             const std::int32_t y = 205 + static_cast<std::int32_t>(i) * 133;
             round_rect({scale_pos(22, s), scale_pos(y, s),
-                        scale_dim(396, s), scale_dim(112, s)}, scale_pos(20, s), C_PANEL);
+                        scale_dim(396, s), scale_dim(112, s)}, scale_pos(20, s), panel_color_);
             text(scale_pos(42, s), scale_pos(y + 25, s),
-                 state.codes[i].issuer, 1, C_MUTED);
+                 state.codes[i].issuer, 1, muted_color_);
             text(scale_pos(42, s), scale_pos(y + 57, s),
-                 state.codes[i].label, 2, C_TEXT);
+                 state.codes[i].label, 2, text_color_);
             text(scale_pos(270, s), scale_pos(y + 57, s),
-                 state.codes[i].code, 2, C_ACCENT);
+                 state.codes[i].code, 2, accent_color_);
             text(scale_pos(42, s), scale_pos(y + 83, s),
-                 "EXPIRES IN", 1, C_MUTED);
-            text(scale_pos(135, s), scale_pos(y + 83, s),
-                 state.codes[i].seconds_remaining < 10u ? "0" : "", 1, C_ORANGE);
+                 "EXPIRES IN", 1, muted_color_);
+            char remaining[3] = {
+            static_cast<char>('0' + ((state.codes[i].seconds_remaining / 10u) % 10u)),
+            static_cast<char>('0' + (state.codes[i].seconds_remaining % 10u)),
+            '\\0'
+        };
+        text(scale_pos(135, s), scale_pos(y + 83, s), remaining, 1, orange_color_);
         }
     }
     round_rect({scale_pos(22, s), scale_pos(745, s),
-                scale_dim(396, s), scale_dim(66, s)}, scale_pos(18, s), C_PANEL_ALT);
-    text(scale_pos(42, s), scale_pos(773, s), "ADD ACCOUNT / SECURE ENROLLMENT", 1, C_TEXT);
+                scale_dim(396, s), scale_dim(66, s)}, scale_pos(18, s), panel_alt_color_);
+    text(scale_pos(42, s), scale_pos(773, s), "ADD ACCOUNT / SECURE ENROLLMENT", 1, text_color_);
     if (!state.enrollment_available)
-        text(scale_pos(42, s), scale_pos(829, s), "TRUSTED PROVISIONING SERVICE OFFLINE", 1, C_ORANGE);
+        text(scale_pos(42, s), scale_pos(829, s), "TRUSTED PROVISIONING SERVICE OFFLINE", 1, orange_color_);
 }
 
 void SystemShellRenderer::render_about(const SystemShellState& state) noexcept {
@@ -365,15 +374,25 @@ void SystemShellRenderer::render_about(const SystemShellState& state) noexcept {
     for (std::size_t i = 0; i < 5u; ++i) {
         const std::int32_t y = 205 + static_cast<std::int32_t>(i) * 105;
         round_rect({scale_pos(22, s), scale_pos(y, s),
-                    scale_dim(396, s), scale_dim(82, s)}, scale_pos(18, s), C_PANEL);
-        text(scale_pos(40, s), scale_pos(y + 26, s), labels[i], 1, C_MUTED);
-        text(scale_pos(40, s), scale_pos(y + 53, s), values[i], 1, C_TEXT);
+                    scale_dim(396, s), scale_dim(82, s)}, scale_pos(18, s), panel_color_);
+        text(scale_pos(40, s), scale_pos(y + 26, s), labels[i], 1, muted_color_);
+        text(scale_pos(40, s), scale_pos(y + 53, s), values[i], 1, text_color_);
     }
-    text(scale_pos(24, s), scale_pos(770, s), "HARDWARE CAPABILITIES ARE REPORTED BY DRIVERS", 1, C_MUTED);
+    text(scale_pos(24, s), scale_pos(770, s), "HARDWARE CAPABILITIES ARE REPORTED BY DRIVERS", 1, muted_color_);
 }
 
 void SystemShellRenderer::render(const SystemShellState& state) noexcept {
     if (!valid()) return;
+    const bool light = state.status.theme == SystemTheme::Light;
+    panel_color_ = light ? 0xfff2f5f9u : 0xff172335u;
+    panel_alt_color_ = light ? 0xffe2e9f1u : 0xff202f43u;
+    text_color_ = light ? 0xff152235u : 0xfff5f7fbu;
+    muted_color_ = light ? 0xff5d6f84u : 0xff9eafc3u;
+    accent_color_ = light ? 0xff2868a8u : 0xffb6d9ffu;
+    green_color_ = light ? 0xff167b4au : 0xff74d6a2u;
+    orange_color_ = light ? 0xff9c5b05u : 0xffffc779u;
+    red_color_ = light ? 0xffa72a37u : 0xffff8e98u;
+    light_theme_ = light;
     switch (state.screen) {
         case SystemScreen::Home: render_home(state); break;
         case SystemScreen::ControlCenter: render_control_center(state); break;
