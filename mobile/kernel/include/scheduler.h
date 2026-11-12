@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#define FAHIM_MAX_USER_TASKS 4u
+#define FAHIM_MAX_USER_TASKS 5u
 #define FAHIM_SCHEDULER_TICK_MS 10u
 
 typedef enum {
@@ -38,6 +38,7 @@ uint32_t fahim_scheduler_wakeup_count(void);
 uint32_t fahim_scheduler_user_fault_count(void);
 uint32_t fahim_scheduler_reap_count(void);
 uint32_t fahim_scheduler_waitpid_success_count(void);
+uint32_t fahim_scheduler_locked_task_skip_count(void);
 void fahim_scheduler_fault_current(void) __attribute__((noreturn));
 void fahim_scheduler_reset(void);
 
