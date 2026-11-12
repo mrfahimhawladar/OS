@@ -9,6 +9,9 @@ add_library(fahim_systemui_runtime
     src/KernelSessionControl.cpp
     src/LockScreenRenderer.cpp
     src/LockScreenController.cpp
+    src/Authenticator.cpp
+    src/SystemShellRenderer.cpp
+    src/SystemShellController.cpp
 )
 
 target_include_directories(fahim_systemui_runtime
@@ -44,3 +47,11 @@ add_executable(native_lockscreen_snapshot tools/RenderNativeLockScreen.cpp)
 target_compile_features(native_lockscreen_snapshot PRIVATE cxx_std_17)
 target_compile_options(native_lockscreen_snapshot PRIVATE -Wall -Wextra -Wpedantic -Werror)
 target_link_libraries(native_lockscreen_snapshot PRIVATE fahim_systemui_runtime fahim_lockscreen_core)
+
+
+add_executable(system_shell_tests tests/SystemShellTests.cpp)
+target_include_directories(system_shell_tests PRIVATE ../lockscreen/native ../tee/include)
+target_compile_features(system_shell_tests PRIVATE cxx_std_17)
+target_compile_options(system_shell_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
+target_link_libraries(system_shell_tests PRIVATE fahim_systemui_runtime fahim_lockscreen_core)
+add_test(NAME system_shell_tests COMMAND system_shell_tests)
