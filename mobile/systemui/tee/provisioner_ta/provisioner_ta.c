@@ -252,8 +252,7 @@ TEE_Result TA_OpenSessionEntryPoint(uint32_t param_types,
         return result;
 
     /* Only a normal-world client may request setup; it never provides the PIN. */
-    if (identity.login != TEE_LOGIN_PUBLIC &&
-        identity.login != TEE_LOGIN_REE_KERNEL)
+    if (identity.login != TEE_LOGIN_PUBLIC)
         return TEE_ERROR_ACCESS_DENIED;
 
     return TEE_SUCCESS;
