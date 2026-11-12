@@ -64,6 +64,12 @@ __weak TEE_Result fahim_tui_platform_read_pin(uint32_t prompt,
 	return TEE_ERROR_NOT_SUPPORTED;
 }
 
+__weak TEE_Result fahim_tui_platform_show_status(uint32_t status)
+{
+	(void)status;
+	return TEE_ERROR_NOT_SUPPORTED;
+}
+
 __weak TEE_Result fahim_tui_platform_end(void)
 {
 	return TEE_SUCCESS;
@@ -148,6 +154,15 @@ out:
 			params[1].memref.size = 0;
 		return res;
 	}
+
+	case FAHIM_TUI_CMD_SHOW_STATUS:
+		if (param_types != TEE_PARAM_TYPES(
+				TEE_PARAM_TYPE_VALUE_INPUT, TEE_PARAM_TYPE_NONE,
+				TEE_PARAM_TYPE_NONE, TEE_PARAM_TYPE_NONE) ||
+		    params[0].value.a < FAHIM_TUI_PROMPT_SUCCESS ||
+		    params[0].value.a > FAHIM_TUI_PROMPT_UNAVAILABLE)
+			return TEE_ERROR_BAD_PARAMETERS;
+		return fahim_tui_platform_show_status(params[0].value.a);
 
 	case FAHIM_TUI_CMD_END:
 		if (param_types != TEE_PARAM_TYPES(
