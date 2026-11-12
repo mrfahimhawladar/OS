@@ -214,10 +214,7 @@ out:
     if (tui_started) {
         (void)invoke_tui(tui_session, FAHIM_TUI_CMD_SHOW_STATUS,
                          display_status, NULL, NULL);
-        if (invoke_tui(tui_session, FAHIM_TUI_CMD_END, 0u, NULL, NULL) != TEE_SUCCESS &&
-            *public_result == FAHIM_PROVISION_RESULT_OK) {
-            /* Enrollment is committed; report its success, but platform should log UI teardown failure. */
-        }
+        (void)invoke_tui(tui_session, FAHIM_TUI_CMD_END, 0u, NULL, NULL);
     }
     if (tui_session != TEE_HANDLE_NULL)
         TEE_CloseTASession(tui_session);
