@@ -54,7 +54,7 @@ Build the Trusted Application with the OP-TEE developer kit:
       TA_DEV_KIT_DIR="$PWD/third_party/optee_os/out/arm/export-ta_arm64" \
       CROSS_COMPILE=aarch64-linux-gnu- O=build
 
-The resulting signed TA is mobile/systemui/tee/credential_ta/build/9f4d1e72-6a0b-4a31-9b60-464148494d43.ta. The repository workflow builds it against pinned OP-TEE source and uploads it as fahim-os-credential-ta.
+The resulting TA package is mobile/systemui/tee/credential_ta/build/9f4d1e72-6a0b-4a31-9b60-464148494d43.ta. The CI uses OP-TEE's bundled default development TA signing key (`default_ta.pem`) only to prove the package can be built and signed. The uploaded artifact is named fahim-os-credential-ta-dev-signed. It is NOT production-trusted and must be re-signed with the device owner's protected TA signing key before installation on a production device.
 
 Build the normal-world runtime with a platform-installed OP-TEE client development package:
 
