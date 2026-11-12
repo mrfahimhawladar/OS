@@ -21,6 +21,7 @@ TEE_Result fahim_tui_platform_read_pin(uint32_t prompt,
                                        uint8_t *secure_pin_buffer,
                                        size_t capacity,
                                        size_t *actual_length);
+TEE_Result fahim_tui_platform_show_status(uint32_t status);
 TEE_Result fahim_tui_platform_end(void);
 
 #endif
