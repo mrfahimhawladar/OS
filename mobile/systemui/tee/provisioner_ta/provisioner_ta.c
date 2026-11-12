@@ -273,7 +273,6 @@ TEE_Result TA_InvokeCommandEntryPoint(void *session_context,
                                       TEE_Param params[4])
 {
     uint32_t public_result = FAHIM_PROVISION_RESULT_UNAVAILABLE;
-    TEE_Result result;
 
     (void)session_context;
 
@@ -285,9 +284,9 @@ TEE_Result TA_InvokeCommandEntryPoint(void *session_context,
         params[0].memref.size < sizeof(fahim_provisioner_response_t))
         return TEE_ERROR_BAD_PARAMETERS;
 
-    result = run_secure_enrollment(&public_result);
+    (void)run_secure_enrollment(&public_result);
     set_response(params, public_result);
 
-    /* The TA-level response is always available; details are not PIN material. */
-    return result == TEE_ERROR_BAD_PARAMETERS ? TEE_SUCCESS : TEE_SUCCESS;
+    /* Detailed status is returned in the public response; PIN data never is. */
+    return TEE_SUCCESS;
 }
