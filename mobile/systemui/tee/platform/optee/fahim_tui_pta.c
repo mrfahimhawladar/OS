@@ -34,7 +34,7 @@ static bool caller_is_provisioner(void)
 	struct ts_session *s = ts_get_current_session();
 	struct tee_ta_session *ta = NULL;
 
-	if (!s)
+	if (!s || !is_ta_ctx(s->ctx) || !is_user_ta_ctx(s->ctx))
 		return false;
 
 	ta = to_ta_session(s);
@@ -79,6 +79,10 @@ static TEE_Result open_session(uint32_t param_types __unused,
 			       TEE_Param params[TEE_NUM_PARAMS] __unused,
 			       void **session_context __unused)
 {
+	if (param_types != TEE_PARAM_TYPES(
+			TEE_PARAM_TYPE_NONE, TEE_PARAM_TYPE_NONE,
+			TEE_PARAM_TYPE_NONE, TEE_PARAM_TYPE_NONE))
+		return TEE_ERROR_BAD_PARAMETERS;
 	if (!caller_is_provisioner())
 		return TEE_ERROR_ACCESS_DENIED;
 	return TEE_SUCCESS;
