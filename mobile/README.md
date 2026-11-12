@@ -93,7 +93,7 @@ The first ARM64 kernel is small enough for a cross-compilation CI job. A full na
 
 **Verified on the QEMU ARM64 reference target:** AArch64 boot/EL1 entry, exception vectors, FDT memory and PL011 discovery, reserved-memory exclusion, physical page allocator, GICv3 initialization, ARM Generic Timer IRQ delivery, EL1 MMU with TTBR1 high-half mapping, independent EL0 address spaces, SVC entry/return, single-core task scheduling, sleep/wakeup, WAITPID, and lower-EL fault isolation.
 
-**Still not implemented:** general IPC/VFS/storage/network services, a boot-time process loader/session manager, QEMU/phone display and touchscreen drivers, a device-connected compositor, trusted PIN provisioning/Trusted UI, deployment of an OP-TEE Secure World on this OS boot chain, and physical-phone board support.
+**Still not implemented:** general IPC/VFS/storage/network services, a boot-time process loader/session manager, QEMU/phone display and touchscreen drivers, a device-connected compositor, deployment of an OP-TEE Secure World on this OS boot chain, hardware RPMB and protected clock provisioning, the board-specific trusted display/touch HAL, production TA signing/trust anchor, and physical-phone board support.
 
 The existing root-level x86 files and `preview.html` are a separate learning prototype. They are not Fahim OS Mobile.
 
@@ -122,4 +122,4 @@ Build and run the SystemUI tests:
 
 The scheduler gate starts locked. The QEMU self-test now creates a synthetic EL0 task assigned the kernel-only LOCKSCREEN role; it invokes SVC 9 to unlock, after which the four test application tasks are allowed to run. This validates the scheduler-level gate and SVC policy, not production PIN verification or boot-time service launch.
 
-The native C++ renderer/controller path is host-tested and connects the touch queue, PIN UI, protected credential interface, kernel-session bridge and compositor surface. It is not yet launched by the boot sequence and no framebuffer or touchscreen device driver is connected. Therefore the Lock Screen is **not yet visibly boot-active** on QEMU or a phone, and no smartphone ROM or flashable image exists.
+The native C++ renderer/controller path is host-tested and connects the touch queue, PIN UI, protected credential interface, kernel-session bridge and compositor surface. A TEEC enrollment client now calls the separate Provisioner TA without transmitting PIN data. The Provisioner TA and secure TUI pseudo-TA compile in CI, but the board-specific secure display/input HAL is intentionally unavailable by default. Therefore initial PIN enrollment still fails closed on current QEMU/CI and on any board without a real secure TUI driver. The Lock Screen is **not yet visibly boot-active** on QEMU or a phone, and no smartphone ROM or flashable image exists.
