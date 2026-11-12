@@ -372,7 +372,6 @@ static TEE_Result enroll_credential(TEE_Param params[4])
     TEE_MemMove(pin, params[0].memref.buffer, length);
     for (i = 0u; i < length; ++i) {
         if (pin[i] < (uint8_t)'0' || pin[i] > (uint8_t)'9') {
-            result = TEE_ERROR_BAD_PARAMETERS;
             goto invalid;
         }
     }
@@ -440,7 +439,6 @@ static TEE_Result verify_credential(TEE_Param params[4])
     TEE_ObjectHandle handle = TEE_HANDLE_NULL;
     size_t length = params[0].memref.size;
     uint64_t now_ms = 0u;
-    uint64_t retry_after = 0u;
     size_t i;
     int matches = 0;
     TEE_Result result;
