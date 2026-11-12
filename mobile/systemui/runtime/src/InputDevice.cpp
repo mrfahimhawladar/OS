@@ -19,6 +19,7 @@ bool TouchscreenCalibrator::normalize(
     const RawTouchSample& raw,
     fahim::ui::PointerEvent& normalized) const noexcept {
     if (!valid_) return false;
+    constexpr std::uint64_t kAxisScale = 65535u;
     const std::int64_t x_range =
         static_cast<std::int64_t>(calibration_.max_x) - calibration_.min_x;
     const std::int64_t y_range =
@@ -27,26 +28,27 @@ bool TouchscreenCalibrator::normalize(
         static_cast<std::int64_t>(raw.raw_x) - calibration_.min_x, 0, x_range);
     const std::int64_t raw_y = std::clamp<std::int64_t>(
         static_cast<std::int64_t>(raw.raw_y) - calibration_.min_y, 0, y_range);
-    std::int64_t x = raw_x * (calibration_.screen_width - 1u) / x_range;
-    std::int64_t y = raw_y * (calibration_.screen_height - 1u) / y_range;
+
+    std::uint64_t u = static_cast<std::uint64_t>(raw_x) * kAxisScale /
+                      static_cast<std::uint64_t>(x_range);
+    std::uint64_t v = static_cast<std::uint64_t>(raw_y) * kAxisScale /
+                      static_cast<std::uint64_t>(y_range);
 
     switch (calibration_.rotation) {
         case Rotation::Deg90: {
-            const std::int64_t rotated_x =
-                static_cast<std::int64_t>(calibration_.screen_width - 1u) - y;
-            y = x;
-            x = rotated_x;
+            const std::uint64_t old_u = u;
+            u = kAxisScale - v;
+            v = old_u;
             break;
         }
         case Rotation::Deg180:
-            x = static_cast<std::int64_t>(calibration_.screen_width - 1u) - x;
-            y = static_cast<std::int64_t>(calibration_.screen_height - 1u) - y;
+            u = kAxisScale - u;
+            v = kAxisScale - v;
             break;
         case Rotation::Deg270: {
-            const std::int64_t rotated_y =
-                static_cast<std::int64_t>(calibration_.screen_height - 1u) - x;
-            x = y;
-            y = rotated_y;
+            const std::uint64_t old_u = u;
+            u = v;
+            v = kAxisScale - old_u;
             break;
         }
         case Rotation::Deg0:
@@ -54,11 +56,12 @@ bool TouchscreenCalibrator::normalize(
             break;
     }
 
-    x = std::clamp<std::int64_t>(x, 0, calibration_.screen_width - 1u);
-    y = std::clamp<std::int64_t>(y, 0, calibration_.screen_height - 1u);
+    const auto x = static_cast<std::int32_t>(
+        u * (calibration_.screen_width - 1u) / kAxisScale);
+    const auto y = static_cast<std::int32_t>(
+        v * (calibration_.screen_height - 1u) / kAxisScale);
     normalized = fahim::ui::PointerEvent{
-        raw.phase, static_cast<std::int32_t>(x),
-        static_cast<std::int32_t>(y), raw.timestamp_ms
+        raw.phase, x, y, raw.timestamp_ms
     };
     return true;
 }
