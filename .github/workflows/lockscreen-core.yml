@@ -1,0 +1,37 @@
+name: Lock screen native core
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "mobile/systemui/lockscreen/native/**"
+      - ".github/workflows/lockscreen-core.yml"
+  pull_request:
+    paths:
+      - "mobile/systemui/lockscreen/native/**"
+      - ".github/workflows/lockscreen-core.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lockscreen-native-core
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Configure native component
+        run: cmake -S mobile/systemui/lockscreen/native -B build/lockscreen-core
+
+      - name: Build native component
+        run: cmake --build build/lockscreen-core --parallel 2
+
+      - name: Run tests
+        run: ctest --test-dir build/lockscreen-core --output-on-failure
