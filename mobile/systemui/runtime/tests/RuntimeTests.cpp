@@ -1,5 +1,6 @@
 #include "fahim/security/CredentialBackend.hpp"
 #include "fahim/security/KernelSessionControl.hpp"
+#include "fahim/systemui/LockScreenView.hpp"
 #include "fahim/input/InputDevice.hpp"
 #include "fahim/ui/Compositor.hpp"
 #include "fahim/ui/InputRouter.hpp"
@@ -254,6 +255,62 @@ static void test_kernel_session_bridge() {
     assert(mock_kernel_session_locked);
 }
 
+
+static void test_native_lock_screen_renderer_and_controller() {
+    constexpr std::uint32_t width = 240u;
+    constexpr std::uint32_t height = 480u;
+    std::vector<std::uint32_t> pixels(static_cast<std::size_t>(width) * height, 0u);
+    fahim::systemui::LockScreenRenderer renderer(
+        pixels.data(), width, height, pixels.size());
+    assert(renderer.valid());
+
+    fahim::systemui::LockScreenFrameInfo frame{};
+    fahim::systemui::LockScreenViewState view_state{};
+    renderer.render(frame, view_state);
+    assert((pixels[0] >> 24u) == 0xffu);
+    assert(renderer.camera_shortcut_bounds().width > 0u);
+    assert(renderer.flashlight_shortcut_bounds().width > 0u);
+    assert(renderer.hit_test_pin(120, 231) == fahim::systemui::PinHit::Digit2);
+    assert(renderer.hit_test_pin(120, 442) == fahim::systemui::PinHit::Submit);
+
+    TestProtectedBackend backend;
+    ProtectedCredentialVerifier verifier(&backend);
+    LockScreenCore core(verifier);
+    fahim::systemui::KernelSessionControl control(&mock_kernel_session_transport);
+    mock_kernel_session_locked = true;
+    fahim::systemui::LockScreenController controller(core, control, renderer);
+    assert(mock_kernel_session_locked);
+
+    // Swipe up to reveal the PIN bouncer.
+    assert(controller.handle_event(PointerEvent{PointerPhase::Down, 120, 400, 10}));
+    assert(controller.handle_event(PointerEvent{PointerPhase::Up, 120, 190, 40}));
+    assert(controller.bouncer_open());
+    controller.render(frame);
+    assert(pixels[0] != 0u);
+
+    // Enter the test-only credential 2468 using on-screen key hit targets.
+    const auto tap = [&controller](std::int32_t x, std::int32_t y,
+                                   std::uint64_t timestamp) {
+        return controller.handle_event(
+            PointerEvent{PointerPhase::Up, x, y, timestamp});
+    };
+    assert(tap(120, 231, 50)); // 2
+    assert(tap(56, 281, 60));  // 4
+    assert(tap(184, 281, 70)); // 6
+    assert(tap(120, 331, 80)); // 8
+    assert(core.input_length() == 4u);
+    assert(tap(120, 442, 90)); // Unlock
+
+    assert(core.state() == LockState::Unlocked);
+    assert(!controller.bouncer_open());
+    assert(!mock_kernel_session_locked);
+    assert(!controller.handle_event(PointerEvent{PointerPhase::Move, 120, 120, 100}));
+
+    controller.lock();
+    assert(core.state() == LockState::Locked);
+    assert(mock_kernel_session_locked);
+}
+
 static void test_missing_credential_backend_fails_closed() {
     ProtectedCredentialVerifier verifier(nullptr);
     std::uint8_t pin[]{'2', '4', '6', '8'};
@@ -267,6 +324,7 @@ int main() {
     test_touchscreen_input_pipeline();
     test_gate_and_compositor();
     test_kernel_session_bridge();
+    test_native_lock_screen_renderer_and_controller();
     test_missing_credential_backend_fails_closed();
     std::cout << "Fahim SystemUI runtime tests: PASS\n";
     return 0;
