@@ -31,7 +31,7 @@ static void secure_clear(void *buffer, size_t length)
 
 static bool caller_is_provisioner(void)
 {
-	struct ts_session *s = ts_get_current_session();
+	struct ts_session *s = ts_get_calling_session();
 	struct tee_ta_session *ta = NULL;
 
 	if (!s || !is_ta_ctx(s->ctx) || !is_user_ta_ctx(s->ctx))
