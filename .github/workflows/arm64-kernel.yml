@@ -1,0 +1,171 @@
+name: Build Fahim OS ARM64 Kernel
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - "mobile/kernel/**"
+      - "mobile/platforms/qemu-aarch64/**"
+      - ".github/workflows/arm64-kernel.yml"
+  pull_request:
+    branches: [ main ]
+    paths:
+      - "mobile/kernel/**"
+      - "mobile/platforms/qemu-aarch64/**"
+      - ".github/workflows/arm64-kernel.yml"
+  workflow_dispatch:
+
+jobs:
+  arm64-kernel:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install Rust stable and ARM64 bare-metal target
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable, verified upstream commit
+        with:
+          targets: aarch64-unknown-none
+
+      - name: Install AArch64 toolchain and QEMU
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu qemu-system-arm
+
+      - name: Build freestanding ARM64 kernel
+        run: make -C mobile/kernel CROSS_COMPILE=aarch64-linux-gnu-
+
+      - name: Inspect ELF and kernel boundaries
+        run: |
+          aarch64-linux-gnu-readelf -h mobile/kernel/build/arm64-qemu/fahim-kernel.elf
+          aarch64-linux-gnu-readelf -s mobile/kernel/build/arm64-qemu/fahim-kernel.elf | grep -E '__kernel_(start|end)|__exception_vectors'
+          aarch64-linux-gnu-size mobile/kernel/build/arm64-qemu/fahim-kernel.elf
+
+      - name: Boot kernel in QEMU and verify memory, GIC and timer IRQs
+        shell: bash
+        run: |
+          set +e
+          timeout 6s qemu-system-aarch64 \
+            -machine virt,gic-version=3 \
+            -cpu cortex-a57 \
+            -m 512M \
+            -nographic \
+            -monitor none \
+            -serial stdio \
+            -no-reboot \
+            -device loader,file=mobile/kernel/build/arm64-qemu/fahim-kernel.elf,cpu-num=0 \
+            > qemu-arm64.log 2>&1
+          qemu_status=$?
+          set -e
+          cat qemu-arm64.log
+          if [ "$qemu_status" -ne 124 ] && [ "$qemu_status" -ne 0 ]; then
+            echo "QEMU exited unexpectedly: $qemu_status"
+            exit "$qemu_status"
+          fi
+          grep -q "FAHIM OS ARM64" qemu-arm64.log
+          grep -q "Kernel BSS: zeroed before C entry" qemu-arm64.log
+          grep -q "PL011 UART: initialized from Device Tree" qemu-arm64.log
+          grep -q "Boot exception level: EL1 confirmed" qemu-arm64.log
+          grep -q "Exception vectors: VBAR_EL1 installed" qemu-arm64.log
+          grep -q "GICv3 Device Tree: validated" qemu-arm64.log
+          grep -q "GICD base: 0x0000000008000000" qemu-arm64.log
+          grep -q "GICR base: 0x00000000080a0000" qemu-arm64.log
+          grep -q "GICv3 driver: initialized (arm-gic 0.10.0)" qemu-arm64.log
+          grep -q "GICv3 Group 1: enabled for current CPU" qemu-arm64.log
+          grep -q "GICv3 timer PPI 30: enabled (level-triggered)" qemu-arm64.log
+          grep -q "GICv3 CPU priority mask:" qemu-arm64.log
+          grep -q "GICv3 initialization self-test: PASS" qemu-arm64.log
+          grep -q "Memory layout: validated" qemu-arm64.log
+          grep -q "Physical Page Allocator: initialized (frame-alloc 0.1.0)" qemu-arm64.log
+          grep -q "Physical Page Allocator self-test: PASS (4 KiB page, 4-page block, read/write, free/reuse)" qemu-arm64.log
+          grep -q "MMU: EL1 translation enabled (TTBR0 identity map + TTBR1 high-half execution)" qemu-arm64.log
+          grep -q "Kernel relocation: high-half PC, SP, VBAR verified (TTBR1)" qemu-arm64.log
+          grep -q "MMU: RAM Normal-WB; GIC/PL011 Device-nGnRnE" qemu-arm64.log
+          grep -q "MMU: kernel text RO+X; rodata RO+XN; data RW+XN" qemu-arm64.log
+          grep -q "MMU self-test: PASS (RAM, Device MMIO, permissions, post-MMU page allocation)" qemu-arm64.log
+          grep -q "MMU high-half direct-map self-test: PASS (TTBR1 alias read/write)" qemu-arm64.log
+          grep -q "User Address Space self-test: PASS (two ASIDs, EL0 permissions, isolation, unmap/remap, destroy)" qemu-arm64.log
+          grep -q "EL0 User Mode self-test: PASS (EL0 execution, SVC return, TTBR0 restore)" qemu-arm64.log
+          grep -q "EL0 process 0x0000000000000065 ran marker 0x000000000000000a" qemu-arm64.log
+          grep -q "EL0 process 0x00000000000000ca ran marker 0x000000000000000a" qemu-arm64.log
+          grep -q "EL0 process 0x0000000000000194 ran marker 0x000000000000000a" qemu-arm64.log
+          grep -q "EL0 process 0x00000000000000ca ran marker 0x000000000000000c" qemu-arm64.log
+          grep -q "EL0 process 0x0000000000000194 ran marker 0x000000000000000c" qemu-arm64.log
+          grep -q "EL0 process 0x0000000000000194 ran marker 0x000000000000000b" qemu-arm64.log
+          grep -q "EL0 process 0x0000000000000065 ran marker 0x000000000000000d" qemu-arm64.log
+          grep -q "EL0 process 0x000000000000012f ran marker 0x000000000000000f" qemu-arm64.log
+          grep -q "EL0 fault: process 0x000000000000012f" qemu-arm64.log
+          grep -q "EL0 write: Fahim" qemu-arm64.log
+          grep -q "EL0 WRITE: rejected invalid user range" qemu-arm64.log
+          grep -q "EL0 WAITPID: rejected non-writable status pointer" qemu-arm64.log
+          grep -q "Process Scheduler timer ticks:" qemu-arm64.log
+          grep -q "idle waits: 0x0000000000000002 wakeups: 0x0000000000000002 user faults: 0x0000000000000001 waitpid: 0x0000000000000001 reaps: 0x0000000000000004" qemu-arm64.log
+          grep -q "Process Lifecycle self-test: PASS (timer preemption, waitpid, child zombie/reap, exit status, timed sleep, idle WFI, EL0 fault isolation, address-space cleanup)" qemu-arm64.log
+          grep -q "RAM region base: 0x0000000040000000 size: 0x0000000020000000 bytes" qemu-arm64.log
+          grep -q "Reserved region base: 0x0000000040000000" qemu-arm64.log
+          grep -q "Reserved region base: 0x0000000040200000" qemu-arm64.log
+          grep -q "Usable region base: 0x0000000040100000" qemu-arm64.log
+          grep -q "IRQ Dispatcher: installed; enabling CPU IRQ delivery" qemu-arm64.log
+          grep -q "IRQ Dispatcher: handled timer PPI 30" qemu-arm64.log
+          grep -q "ARM Generic Timer IRQ test: PASS (5 interrupts, PPI 30)" qemu-arm64.log
+          grep -q "Milestone 5C: GICv3 IRQ dispatch and Generic Timer verified." qemu-arm64.log
+
+      - name: Build controlled exception self-test kernel
+        run: make -C mobile/kernel CROSS_COMPILE=aarch64-linux-gnu- EXCEPTION_SELFTEST=1
+
+      - name: Trigger BRK and verify exception diagnostics in QEMU
+        shell: bash
+        run: |
+          set +e
+          timeout 6s qemu-system-aarch64 \
+            -machine virt,gic-version=3 \
+            -cpu cortex-a57 \
+            -m 512M \
+            -nographic \
+            -monitor none \
+            -serial stdio \
+            -no-reboot \
+            -device loader,file=mobile/kernel/build/arm64-qemu-exception-test/fahim-kernel.elf,cpu-num=0 \
+            > qemu-exception.log 2>&1
+          qemu_status=$?
+          set -e
+          cat qemu-exception.log
+          if [ "$qemu_status" -ne 124 ] && [ "$qemu_status" -ne 0 ]; then
+            echo "QEMU exception test exited unexpectedly: $qemu_status"
+            exit "$qemu_status"
+          fi
+          grep -q "Kernel relocation: high-half PC, SP, VBAR verified (TTBR1)" qemu-exception.log
+          grep -q "MMU high-half direct-map self-test: PASS (TTBR1 alias read/write)" qemu-exception.log
+          grep -q "User Address Space self-test: PASS (two ASIDs, EL0 permissions, isolation, unmap/remap, destroy)" qemu-exception.log
+          grep -q "EL0 User Mode self-test: PASS (EL0 execution, SVC return, TTBR0 restore)" qemu-exception.log
+          grep -q "EL0 process 0x0000000000000065 ran marker 0x000000000000000a" qemu-exception.log
+          grep -q "EL0 process 0x00000000000000ca ran marker 0x000000000000000a" qemu-exception.log
+          grep -q "EL0 process 0x0000000000000194 ran marker 0x000000000000000a" qemu-exception.log
+          grep -q "EL0 process 0x00000000000000ca ran marker 0x000000000000000c" qemu-exception.log
+          grep -q "EL0 process 0x0000000000000194 ran marker 0x000000000000000c" qemu-exception.log
+          grep -q "EL0 process 0x0000000000000194 ran marker 0x000000000000000b" qemu-exception.log
+          grep -q "EL0 process 0x0000000000000065 ran marker 0x000000000000000d" qemu-exception.log
+          grep -q "EL0 process 0x000000000000012f ran marker 0x000000000000000f" qemu-exception.log
+          grep -q "EL0 fault: process 0x000000000000012f" qemu-exception.log
+          grep -q "EL0 write: Fahim" qemu-exception.log
+          grep -q "EL0 WRITE: rejected invalid user range" qemu-exception.log
+          grep -q "EL0 WAITPID: rejected non-writable status pointer" qemu-exception.log
+          grep -q "Process Scheduler timer ticks:" qemu-exception.log
+          grep -q "idle waits: 0x0000000000000002 wakeups: 0x0000000000000002 user faults: 0x0000000000000001 waitpid: 0x0000000000000001 reaps: 0x0000000000000004" qemu-exception.log
+          grep -q "Process Lifecycle self-test: PASS (timer preemption, waitpid, child zombie/reap, exit status, timed sleep, idle WFI, EL0 fault isolation, address-space cleanup)" qemu-exception.log
+          grep -q "ARM Generic Timer IRQ test: PASS (5 interrupts, PPI 30)" qemu-exception.log
+          grep -q "Triggering controlled BRK exception" qemu-exception.log
+          grep -q "Exception vector: current EL SPx synchronous" qemu-exception.log
+          grep -q "ESR_EL1:" qemu-exception.log
+          grep -q "ELR_EL1:" qemu-exception.log
+          grep -q "FAR_EL1:" qemu-exception.log
+          grep -q "SPSR_EL1:" qemu-exception.log
+          grep -q "Exception self-test: PASS (BRK #0xF05)" qemu-exception.log
+          grep -q "Fatal exception: CPU halted." qemu-exception.log
+
+      - name: Upload production ARM64 kernel ELF
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: fahim-os-arm64-kernel
+          path: mobile/kernel/build/arm64-qemu/fahim-kernel.elf
+          if-no-files-found: error
