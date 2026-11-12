@@ -1,0 +1,113 @@
+name: Collect Android 17 Keyguard source
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/collect-keyguard-source.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android17-keyguard-source
+  cancel-in-progress: true
+
+jobs:
+  collect:
+    name: Collect focused SystemUI source
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Download focused Official AOSP source archives
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          REF="refs/heads/android17-release"
+          ROOT="$GITHUB_WORKSPACE/collected"
+          mkdir -p "$ROOT"
+
+          download_gitiles_archive() {
+            local project="$1"
+            local subpath="$2"
+            local destination="$3"
+            local url="https://android.googlesource.com/\${project}/+archive/\${REF}"
+
+            if [[ -n "$subpath" ]]; then
+              url+="/\${subpath}"
+            fi
+            url+=".tar.gz"
+
+            mkdir -p "$destination"
+            local archive="/tmp/$(echo "$project-$subpath" | tr '/ ' '__').tar.gz"
+
+            echo "Downloading: $url"
+            curl --fail --location --show-error --silent \
+              --retry 4 --retry-all-errors --connect-timeout 20 --max-time 600 \
+              "$url" --output "$archive"
+
+            tar -tzf "$archive" >/dev/null
+            tar -xzf "$archive" -C "$destination"
+            rm -f "$archive"
+          }
+
+          # Complete SystemUI module subtree: Keyguard source, UI resources,
+          # Android.bp and module metadata are kept together.
+          download_gitiles_archive \
+            "platform/frameworks/base" \
+            "packages/SystemUI" \
+            "$ROOT/frameworks/base/packages/SystemUI"
+
+          # Shared source libraries referenced by SystemUI.
+          download_gitiles_archive \
+            "platform/frameworks/libs/systemui" \
+            "" \
+            "$ROOT/frameworks/libs/systemui"
+
+          download_gitiles_archive \
+            "platform/frameworks/libs/modules-utils" \
+            "" \
+            "$ROOT/frameworks/libs/modules-utils"
+
+          cat > "$ROOT/SOURCE-INFO.txt" <<'EOF'
+          Android release: android17-release
+          Upstream: Official Android Open Source Project (AOSP)
+          Retrieval: Google Gitiles directory archives
+          Included:
+            - platform/frameworks/base/packages/SystemUI
+            - platform/frameworks/libs/systemui
+            - platform/frameworks/libs/modules-utils
+
+          Scope:
+            Focused source snapshot for Keyguard/Lock Screen study.
+            This is not a complete AOSP checkout and is not independently buildable.
+            Android.bp and source imports must be inspected to resolve further
+            transitive platform dependencies before any build.
+          EOF
+
+          echo "Collected source sizes:"
+          du -sh "$ROOT/frameworks/base/packages/SystemUI" \
+                 "$ROOT/frameworks/libs/systemui" \
+                 "$ROOT/frameworks/libs/modules-utils"
+          echo "Total:"
+          du -sh "$ROOT"
+
+      - name: Package source snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE"
+          zip -qr android17-keyguard-source.zip collected
+          ls -lh android17-keyguard-source.zip
+          unzip -t android17-keyguard-source.zip
+
+      - name: Upload source artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android17-keyguard-source
+          path: android17-keyguard-source.zip
+          if-no-files-found: error
+          retention-days: 14
