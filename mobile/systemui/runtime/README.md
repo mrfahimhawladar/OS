@@ -29,7 +29,7 @@ The renderer and controller can now register the native bitmap as a LOCKSCREEN c
 
 **This is not yet a boot-active Lock Screen, Android image, phone ROM, or flashable build.** It is the next testable software layer to integrate with the restored ARM64 kernel and future board drivers.
 
-The kernel session gate starts locked and filters scheduler task roles. The native bridge uses SVC 8/9 to read or change that state. The kernel permits changes only from a task assigned the LOCKSCREEN role by trusted kernel code. Host tests inject a mock transport; the AArch64 syscall path still needs a boot-created Lock Screen process to exercise on QEMU/device.
+The kernel session gate starts locked and filters scheduler task roles. The native bridge uses SVC 8/9 to read or change that state. The kernel permits changes only from a task assigned the LOCKSCREEN role by trusted kernel code. Host tests exercise the C++ bridge with a mock transport. The QEMU kernel test separately runs a synthetic LOCKSCREEN-role EL0 payload which issues SVC 9 directly; it does not boot the C++ renderer/controller or verify a real credential.
 
 ## Native UI event loop
 
