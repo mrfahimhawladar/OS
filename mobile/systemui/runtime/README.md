@@ -68,3 +68,25 @@ The workflow `.github/workflows/lockscreen-core.yml` builds `native_lockscreen_s
 - `native-pin-bouncer.png`: renderer's PIN-entry UI state (zero digits entered).
 
 These are host-rendered framebuffer outputs from the native C++ code, not the HTML preview. They are not screenshots captured from a booted QEMU/phone display, and they do not exercise real hardware or credential verification.
+
+## Native OS System Shell
+
+The native System Shell is built into fahim_systemui_runtime and is not an Android Activity or HTML mock-up:
+
+- SystemShellRenderer renders Home, Control Center, Settings, Authenticator and About directly into an ARGB framebuffer.
+- SystemShellController switches screens, handles normalized touch events and draws the active screen into the existing compositor.
+- SystemPlatformServices is a platform-driver/service contract for Wi-Fi, Bluetooth, airplane mode, flashlight, brightness, theme, time and battery. The shell only reports an action as successful when the real backend returns success.
+- AuthenticatorVault returns account labels and generated one-time codes only. It never exports TOTP seeds or shared secrets into the Normal World/SystemUI process. An unavailable secure vault produces an explicit unavailable/empty state.
+- The TOTP code is expected to be generated within a trusted authenticator service; secret material is not processed in SystemUI.
+
+Build and test the unified shell with:
+
+    cmake -S mobile/systemui -B build/systemui
+    cmake --build build/systemui --parallel
+    ctest --test-dir build/systemui --output-on-failure
+
+The shell compositor surface is assigned the Application role, so it is filtered by the session gate while the device is locked. The kernel scheduler now has a SYSTEM_SHELL task role that is not runnable while locked and can run after the trusted Lock Screen unlocks the session.
+
+### OS activation boundary
+
+The System Shell renderer, controller, touch routing, compositor integration and platform service interfaces are native OS components. They are not yet boot-launched on QEMU or a phone. The current kernel has no general process loader/session manager, no QEMU/phone display driver and no touchscreen controller driver. No production Wi-Fi/Bluetooth/brightness service backend or secure TOTP vault implementation is connected yet. Those services fail closed/offline rather than simulating working hardware.
