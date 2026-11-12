@@ -213,3 +213,15 @@ A future trusted system-process launch path must:
 5. Delegate PIN verification and persistent lockout policy to protected credential storage/TEE; there is intentionally no default PIN or software-only production verifier.
 
 Until the process loader, graphics/input drivers and trusted credential backend exist, the runtime tests prove component behavior only—not a boot-time security boundary.
+
+## Kernel-enforced session lock gate
+
+The scheduler now starts with the session locked. Each user task has a kernel-assigned role: APPLICATION, LOCKSCREEN, or EMERGENCY. While locked, `pick_next_task()` will not select APPLICATION tasks; only LOCKSCREEN and EMERGENCY roles remain runnable. The default `fahim_scheduler_create_user()` assigns APPLICATION. A trusted kernel process manager must explicitly use `fahim_scheduler_create_user_with_role()` when creating the lock-screen service.
+
+The EL0 SVC ABI now exposes:
+- `x8 = 8`: GET_SESSION_LOCKED; returns 1 when locked, 0 when unlocked.
+- `x8 = 9, x0 = 0|1`: SET_SESSION_LOCKED. Only the currently running kernel-assigned LOCKSCREEN role may change the session gate; application and emergency roles receive an error.
+
+The QEMU kernel self-test verifies the default locked boot policy, app-role denial, trusted-role allowance and explicit lock/unlock transitions. The process scheduler smoke test explicitly unlocks only for its synthetic test tasks and restores the locked state before returning.
+
+This is a kernel scheduler gate foundation. A trusted task loader/process manager and boot-created Lock Screen task are still required before it can protect a real interactive session.
