@@ -346,6 +346,27 @@ static void run_user_mode_self_test(void) {
     console_write("EL0 User Mode self-test: PASS (EL0 execution, SVC return, TTBR0 restore)\n");
 }
 
+static void run_kernel_session_gate_self_test(void) {
+    if (!fahim_scheduler_session_locked() ||
+        fahim_scheduler_role_allowed(FAHIM_TASK_ROLE_APPLICATION) != 0 ||
+        fahim_scheduler_role_allowed(FAHIM_TASK_ROLE_LOCKSCREEN) == 0 ||
+        fahim_scheduler_role_allowed(FAHIM_TASK_ROLE_EMERGENCY) == 0) {
+        console_write("Kernel Lock Gate self-test: FAIL (locked boot policy)\n");
+        halt_forever();
+    }
+
+    /* Only trusted kernel code can alter the gate before the scheduler starts. */
+    if (fahim_scheduler_set_session_locked(0u) != 0 ||
+        fahim_scheduler_role_allowed(FAHIM_TASK_ROLE_APPLICATION) == 0 ||
+        fahim_scheduler_set_session_locked(1u) != 0 ||
+        fahim_scheduler_role_allowed(FAHIM_TASK_ROLE_APPLICATION) != 0) {
+        console_write("Kernel Lock Gate self-test: FAIL (lock transition)\n");
+        halt_forever();
+    }
+
+    console_write("Kernel Lock Gate self-test: PASS (locked boot; only Lock Screen/Emergency roles runnable)\n");
+}
+
 static void run_process_scheduler_self_test(void) {
     const size_t code_size =
         (uintptr_t)__user_process_code_end - (uintptr_t)__user_process_code_start;
@@ -457,6 +478,12 @@ static void run_process_scheduler_self_test(void) {
         halt_forever();
     }
 
+    /* Scheduler smoke tasks are test applications, so unlock explicitly for this QEMU test. */
+    if (fahim_scheduler_set_session_locked(0u) != 0) {
+        console_write("Process Scheduler self-test: FAIL (test-session unlock)\n");
+        halt_forever();
+    }
+
     if (fahim_scheduler_create_user(
             space_parent, user_code_va, user_stack_va + 4096u, 101u) < 0 ||
         fahim_scheduler_create_user(
@@ -534,6 +561,11 @@ static void run_process_scheduler_self_test(void) {
     }
 
     fahim_scheduler_reset();
+    if (fahim_scheduler_set_session_locked(1u) != 0 ||
+        fahim_scheduler_session_locked() == 0) {
+        console_write("Kernel Lock Gate self-test: FAIL (restore locked session)\n");
+        halt_forever();
+    }
     if (fahim_page_allocator_free(code_page, 1u) != 0 ||
         fahim_page_allocator_free(fault_code_page, 1u) != 0 ||
         fahim_page_allocator_free(stack_page_a, 1u) != 0 ||
@@ -694,6 +726,7 @@ void kernel_main(const void *dtb) {
     run_page_allocator_self_test(&layout);
     run_mmu_self_test(&layout, &gic);
     run_timer_irq_self_test();
+    run_kernel_session_gate_self_test();
     run_process_scheduler_self_test();
 
 #ifdef FAHIM_EXCEPTION_SELFTEST
