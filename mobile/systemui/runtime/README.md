@@ -89,4 +89,4 @@ The shell compositor surface is assigned the Application role, so it is filtered
 
 ### OS activation boundary
 
-The System Shell renderer, controller, touch routing, compositor integration and platform service interfaces are native OS components. They are not yet boot-launched on QEMU or a phone. The current kernel has no general process loader/session manager, no QEMU/phone display driver and no touchscreen controller driver. No production Wi-Fi/Bluetooth/brightness service backend or secure TOTP vault implementation is connected yet. Those services fail closed/offline rather than simulating working hardware.
+The System Shell renderer, controller, touch routing, compositor integration and platform service interfaces are native OS components. They are not yet launched as boot-time processes in the QEMU virtual reference machine. The current kernel still needs a boot-time process/session manager, a QEMU virtual display/framebuffer driver and a virtual input driver. Production Wi-Fi/Bluetooth/brightness service providers and a secure TOTP vault implementation are also not connected yet; those services fail closed/offline rather than simulating working hardware.
