@@ -8,7 +8,7 @@
 
 namespace fahim::systemui {
 enum class LockState : std::uint8_t { Locked, Authenticating, Lockout, Unlocked };
-enum class VerificationResult : std::uint8_t { Accepted, Rejected, TemporarilyUnavailable };
+enum class VerificationResult : std::uint8_t { Accepted, Rejected, LockedOut, TemporarilyUnavailable };
 enum class SubmitResult : std::uint8_t {
     UnavailableState, EmptyInput, InvalidLength, Accepted, Rejected, LockedOut, BackendUnavailable
 };
@@ -20,6 +20,10 @@ public:
     virtual ~CredentialVerifier() = default;
     virtual VerificationResult verify_pin(const std::uint8_t* pin,
                                            std::size_t length) noexcept = 0;
+    // A trusted backend may return a persistent secure-world lockout deadline.
+    virtual std::chrono::milliseconds retry_after() const noexcept {
+        return std::chrono::seconds(30);
+    }
 };
 
 class LockScreenCore final {
