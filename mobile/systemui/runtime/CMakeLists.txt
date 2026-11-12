@@ -6,6 +6,8 @@ add_library(fahim_systemui_runtime
     src/Compositor.cpp
     src/CredentialBackend.cpp
     src/KernelSessionControl.cpp
+    src/LockScreenRenderer.cpp
+    src/LockScreenController.cpp
 )
 
 target_include_directories(fahim_systemui_runtime
