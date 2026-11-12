@@ -372,9 +372,20 @@ static void run_process_scheduler_self_test(void) {
         (uintptr_t)__user_process_code_end - (uintptr_t)__user_process_code_start;
     const size_t fault_code_size =
         (uintptr_t)__user_fault_code_end - (uintptr_t)__user_fault_code_start;
+    static const uint32_t lockscreen_unlock_payload[] = {
+        0xd2800128u, /* mov x8, #9: FAHIM_SYS_SET_SESSION_LOCKED */
+        0xd2800000u, /* mov x0, #0: unlock */
+        0xd4000001u, /* svc #0 */
+        0xd2800028u, /* mov x8, #1: FAHIM_SYS_EXIT */
+        0xd2800000u, /* mov x0, #0: exit status */
+        0xd4000001u  /* svc #0 */
+    };
+    const size_t lockscreen_code_size = sizeof(lockscreen_unlock_payload);
     if (code_size == 0u || code_size > 4096u || (code_size & 3u) != 0u ||
         fault_code_size == 0u || fault_code_size > 4096u ||
-        (fault_code_size & 3u) != 0u) {
+        (fault_code_size & 3u) != 0u ||
+        lockscreen_code_size == 0u || lockscreen_code_size > 4096u ||
+        (lockscreen_code_size & 3u) != 0u) {
         console_write("Process Scheduler self-test: FAIL (user payload size)\n");
         halt_forever();
     }
@@ -386,10 +397,13 @@ static void run_process_scheduler_self_test(void) {
     const uint64_t stack_page_sleep = fahim_page_allocator_alloc(1u);
     const uint64_t fault_stack_page = fahim_page_allocator_alloc(1u);
     const uint64_t shared_page = fahim_page_allocator_alloc(1u);
+    const uint64_t lockscreen_code_page = fahim_page_allocator_alloc(1u);
+    const uint64_t lockscreen_stack_page = fahim_page_allocator_alloc(1u);
     if (code_page == UINT64_MAX || fault_code_page == UINT64_MAX ||
         stack_page_a == UINT64_MAX || stack_page_b == UINT64_MAX ||
         stack_page_sleep == UINT64_MAX || fault_stack_page == UINT64_MAX ||
-        shared_page == UINT64_MAX) {
+        shared_page == UINT64_MAX || lockscreen_code_page == UINT64_MAX ||
+        lockscreen_stack_page == UINT64_MAX) {
         console_write("Process Scheduler self-test: FAIL (physical frame allocation)\n");
         halt_forever();
     }
@@ -400,6 +414,14 @@ static void run_process_scheduler_self_test(void) {
     const uintptr_t fault_code_alias =
         (uintptr_t)0xffff000000000000ull + (uintptr_t)fault_code_page;
     volatile uint32_t *destination = (volatile uint32_t *)code_alias;
+    const uintptr_t lockscreen_code_alias =
+        (uintptr_t)0xffff000000000000ull + (uintptr_t)lockscreen_code_page;
+    volatile uint32_t *lockscreen_destination =
+        (volatile uint32_t *)lockscreen_code_alias;
+    for (size_t index = 0u;
+         index < lockscreen_code_size / sizeof(uint32_t); ++index) {
+        lockscreen_destination[index] = lockscreen_unlock_payload[index];
+    }
     volatile uint32_t *fault_destination =
         (volatile uint32_t *)fault_code_alias;
     const uint32_t *source = __user_process_code_start;
@@ -421,8 +443,10 @@ static void run_process_scheduler_self_test(void) {
     const uint32_t space_child = fahim_address_space_create();
     const uint32_t space_sleep = fahim_address_space_create();
     const uint32_t fault_space = fahim_address_space_create();
+    const uint32_t lockscreen_space = fahim_address_space_create();
     if (space_parent == UINT32_MAX || space_child == UINT32_MAX ||
-        space_sleep == UINT32_MAX || fault_space == UINT32_MAX) {
+        space_sleep == UINT32_MAX || fault_space == UINT32_MAX ||
+        lockscreen_space == UINT32_MAX) {
         console_write("Process Scheduler self-test: FAIL (address-space creation)\n");
         halt_forever();
     }
@@ -451,7 +475,13 @@ static void run_process_scheduler_self_test(void) {
         fahim_address_space_map_user_page(
             fault_space, user_code_va, fault_code_page, FAHIM_USER_PAGE_RO_X) != 0 ||
         fahim_address_space_map_user_page(
-            fault_space, user_stack_va, fault_stack_page, FAHIM_USER_PAGE_RW_XN) != 0) {
+            fault_space, user_stack_va, fault_stack_page, FAHIM_USER_PAGE_RW_XN) != 0 ||
+        fahim_address_space_map_user_page(
+            lockscreen_space, user_code_va, lockscreen_code_page,
+            FAHIM_USER_PAGE_RO_X) != 0 ||
+        fahim_address_space_map_user_page(
+            lockscreen_space, user_stack_va, lockscreen_stack_page,
+            FAHIM_USER_PAGE_RW_XN) != 0) {
         console_write("Process Scheduler self-test: FAIL (user mapping)\n");
         halt_forever();
     }
@@ -467,6 +497,17 @@ static void run_process_scheduler_self_test(void) {
         halt_forever();
     }
 
+    if (fahim_address_space_activate(lockscreen_space) != 0) {
+        console_write("Process Scheduler self-test: FAIL (Lock Screen cache-maintenance activation)\n");
+        halt_forever();
+    }
+    synchronize_user_code_cache(
+        lockscreen_code_alias, (uintptr_t)user_code_va, lockscreen_code_size);
+    if (fahim_address_space_deactivate_current() != 0) {
+        console_write("Process Scheduler self-test: FAIL (Lock Screen cache-maintenance restore)\n");
+        halt_forever();
+    }
+
     if (fahim_address_space_activate(fault_space) != 0) {
         console_write("Process Scheduler self-test: FAIL (fault cache-maintenance activation)\n");
         halt_forever();
@@ -478,12 +519,7 @@ static void run_process_scheduler_self_test(void) {
         halt_forever();
     }
 
-    /* Scheduler smoke tasks are test applications, so unlock explicitly for this QEMU test. */
-    if (fahim_scheduler_set_session_locked(0u) != 0) {
-        console_write("Process Scheduler self-test: FAIL (test-session unlock)\n");
-        halt_forever();
-    }
-
+    /* Keep the kernel gate locked. The trusted Lock Screen task must unlock it. */
     if (fahim_scheduler_create_user(
             space_parent, user_code_va, user_stack_va + 4096u, 101u) < 0 ||
         fahim_scheduler_create_user(
@@ -492,6 +528,9 @@ static void run_process_scheduler_self_test(void) {
             space_sleep, user_code_va, user_stack_va + 4096u, 404u) < 0 ||
         fahim_scheduler_create_user(
             fault_space, user_code_va, user_stack_va + 4096u, 303u) < 0 ||
+        fahim_scheduler_create_user_with_role(
+            lockscreen_space, user_code_va, user_stack_va + 4096u, 900u,
+            FAHIM_TASK_ROLE_LOCKSCREEN) < 0 ||
         fahim_scheduler_set_parent(202u, 101u) != 0) {
         console_write("Process Scheduler self-test: FAIL (task/parent creation)\n");
         halt_forever();
@@ -505,7 +544,7 @@ static void run_process_scheduler_self_test(void) {
         halt_forever();
     }
 
-    console_write("Process Scheduler: starting parent, child, sleeper and fault-isolation tasks\n");
+    console_write("Process Scheduler: locked session; trusted Lock Screen task must unlock before application tasks\n");
     fahim_scheduler_start();
 
     __asm__ volatile("msr daifset, #2\n\tisb" ::: "memory");
@@ -517,10 +556,11 @@ static void run_process_scheduler_self_test(void) {
     const uint32_t user_faults = fahim_scheduler_user_fault_count();
     const uint32_t reaps = fahim_scheduler_reap_count();
     const uint32_t waitpid_successes = fahim_scheduler_waitpid_success_count();
+    const uint32_t locked_task_skips = fahim_scheduler_locked_task_skip_count();
     if (scheduler_ticks == 0u || shared_counter[0] != 3u ||
         shared_counter[1] != 0x2a00u ||
         idle_waits != 2u || wakeups != 2u || user_faults != 1u ||
-        reaps != 4u || waitpid_successes != 1u) {
+        reaps != 5u || waitpid_successes != 1u || locked_task_skips < 4u) {
         console_write("Process Lifecycle self-test: FAIL ticks=");
         console_write_hex64(scheduler_ticks);
         console_write(" shared=");
@@ -537,6 +577,8 @@ static void run_process_scheduler_self_test(void) {
         console_write_hex64(waitpid_successes);
         console_write(" reaps=");
         console_write_hex64(reaps);
+        console_write(" locked_skips=");
+        console_write_hex64(locked_task_skips);
         console_write("\n");
         halt_forever();
     }
@@ -553,6 +595,8 @@ static void run_process_scheduler_self_test(void) {
     console_write_hex64(waitpid_successes);
     console_write(" reaps: ");
     console_write_hex64(reaps);
+    console_write(" locked app tasks skipped before Lock Screen unlock: ");
+    console_write_hex64(locked_task_skips);
     console_write("\n");
 
     if (fahim_scheduler_is_active()) {
@@ -572,11 +616,14 @@ static void run_process_scheduler_self_test(void) {
         fahim_page_allocator_free(stack_page_b, 1u) != 0 ||
         fahim_page_allocator_free(stack_page_sleep, 1u) != 0 ||
         fahim_page_allocator_free(fault_stack_page, 1u) != 0 ||
-        fahim_page_allocator_free(shared_page, 1u) != 0) {
+        fahim_page_allocator_free(shared_page, 1u) != 0 ||
+        fahim_page_allocator_free(lockscreen_code_page, 1u) != 0 ||
+        fahim_page_allocator_free(lockscreen_stack_page, 1u) != 0) {
         console_write("Process Lifecycle self-test: FAIL (physical frame cleanup)\n");
         halt_forever();
     }
 
+    console_write("Kernel Lock Gate integration test: PASS (locked boot, app tasks skipped, trusted EL0 Lock Screen used SVC 9 to unlock, application tasks resumed)\n");
     console_write("Process Lifecycle self-test: PASS (timer preemption, waitpid, child zombie/reap, exit status, timed sleep, idle WFI, EL0 fault isolation, address-space cleanup)\n");
 }
 
