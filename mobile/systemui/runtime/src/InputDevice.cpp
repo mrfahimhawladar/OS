@@ -95,6 +95,10 @@ bool TouchInputPipeline::pump_one() noexcept {
     return queue_.push(normalized);
 }
 
+bool TouchInputPipeline::next_event(fahim::ui::PointerEvent& event) noexcept {
+    return queue_.pop(event);
+}
+
 bool TouchInputPipeline::dispatch_one(
     fahim::ui::LockScreenInputRouter& router,
     fahim::ui::InputDecision& decision) noexcept {
