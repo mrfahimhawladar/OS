@@ -178,6 +178,7 @@ static TEE_Result open_pepper_key(TEE_ObjectHandle *key, bool create_if_missing)
 static TEE_Result calculate_pin_verifier(
     const uint8_t *pin, size_t pin_length,
     const uint8_t salt[FAHIM_CREDENTIAL_SALT_BYTES],
+    bool create_pepper_if_missing,
     uint8_t digest[FAHIM_CREDENTIAL_DIGEST_BYTES])
 {
     TEE_ObjectHandle key = TEE_HANDLE_NULL;
@@ -199,7 +200,7 @@ static TEE_Result calculate_pin_verifier(
     TEE_MemMove(message + FAHIM_CREDENTIAL_SALT_BYTES + 1u,
                 pin, pin_length);
 
-    result = open_pepper_key(&key, true);
+    result = open_pepper_key(&key, create_pepper_if_missing);
     if (result != TEE_SUCCESS)
         goto cleanup;
 
@@ -432,7 +433,7 @@ static TEE_Result enroll_credential(TEE_Param params[4])
     TEE_GenerateRandom(record.salt, sizeof(record.salt));
 
     result = calculate_pin_verifier(
-        pin, length, record.salt, record.verifier);
+        pin, length, record.salt, true, record.verifier);
     if (result != TEE_SUCCESS)
         goto unavailable;
 
@@ -519,7 +520,7 @@ static TEE_Result verify_credential(TEE_Param params[4])
         record.failed_attempts = 0u;
     }
 
-    result = calculate_pin_verifier(pin, length, record.salt, candidate);
+    result = calculate_pin_verifier(pin, length, record.salt, false, candidate);
     if (result != TEE_SUCCESS)
         goto unavailable;
 
