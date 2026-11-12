@@ -903,7 +903,7 @@ pub extern "C" fn fahim_mmu_high_alias_self_test() -> i32 {
  * the shared high-half kernel direct map. These mappings are prepared but are
  * not activated until the kernel has a dedicated EL0 entry/context-switch path.
  */
-const ADDRESS_SPACE_CAPACITY: usize = 4;
+const ADDRESS_SPACE_CAPACITY: usize = 8;
 const USER_VA_START: usize = 0x0000_0001_0000_0000; // 4 GiB
 const USER_VA_LIMIT: usize = 0x0000_0100_0000_0000; // 1 TiB, exclusive
 const ADDRESS_SPACE_FREE: u32 = 0;
