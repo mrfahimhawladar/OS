@@ -1,31 +1,38 @@
 Fahim OS Lock Screen and SystemUI verification report
 Date: 2026-11-12
 
-Verified in GitHub Actions:
-- Native LockScreenCore configure/build: PASS.
-- Native LockScreenCore CTest: 1/1 passed.
-- SystemUI runtime configure: PASS.
-- SystemUI runtime compilation with -Wall -Wextra -Wpedantic -Werror: PASS.
-- Combined CTest: 2/2 passed (lockscreen_core_tests, systemui_runtime_tests).
-- Restored ARM64 kernel cross-build and QEMU boot/self-tests: PASS on the existing single-core QEMU virt target.
+Corrected successful GitHub Actions runs:
+- Native SystemUI runtime: https://github.com/mrfahimhawladar/OS/actions/runs/43135247781
+- ARM64 kernel + QEMU + lock gate + controlled exception: https://github.com/mrfahimhawladar/OS/actions/runs/43135610148
 
-Successful runs:
-- SystemUI runtime: https://github.com/mrfahimhawladar/OS/actions/runs/43133600811
-- ARM64 kernel: https://github.com/mrfahimhawladar/OS/actions/runs/43133211667
+Native SystemUI verification:
+- CMake configure: PASS.
+- Native C++17 compilation with -Wall -Wextra -Wpedantic -Werror: PASS.
+- CTest: 2/2 passed (lockscreen_core_tests, systemui_runtime_tests).
+- Runtime test exercises framebuffer validation/clipping, XRGB8888/RGB565 writes, calibrated touch input queue, swipe-to-bouncer, on-screen PIN entry with an explicitly test-only verifier, native Lock Screen bitmap registration/removal in the compositor, mock kernel SVC unlock/relock bridge, locked app-surface filtering, and fail-closed missing credential backend.
 
-SystemUI tests cover:
-- Locked PIN state, length validation, input-buffer clearing, failed-attempt lockout and expiry.
-- Protected credential adapter fail-closed behavior when no trusted backend is installed.
-- Framebuffer dimension/stride/memory-size validation, clipping, XRGB8888 and RGB565 writes.
-- Touch routing remains on Lock Screen while locked; swipe-up, camera and flashlight shortcuts.
-- Compositor z-order and alpha blend.
-- Application surfaces and app input denied while locked; allowed after verifier-approved unlock.
+ARM64 kernel and QEMU verification:
+- Freestanding ARM64 kernel cross-build and ELF inspection: PASS.
+- Main QEMU boot: PASS.
+- Kernel session starts locked; scheduler skips four APPLICATION-role tasks while locked.
+- A synthetic EL0 task assigned the kernel-only LOCKSCREEN role calls SVC 9 to unlock; then the four test app tasks run.
+- QEMU reports five task/address-space reaps and four blocked application-task selections.
+- Process lifecycle, timer/GIC, address-space, and controlled BRK exception tests: PASS.
+- Production ARM64 kernel ELF artifact uploaded as `fahim-os-arm64-kernel` (workflow artifact; not a phone image).
 
-Not verified / still missing:
-- A real QEMU virtio-gpu/simple-framebuffer device driver and framebuffer mapping.
-- A real QEMU virtio-input or physical phone touchscreen driver feeding the input router.
-- OS window manager/session manager and kernel-enforced process/session lock gate.
-- Trusted production credential storage/TEE backend and persistent lockout policy.
-- Native SystemUI launch from boot, full Lock Screen operation on a device, ROM/APK or flashable image.
+Failure history and corrections:
+- The screenshot's original native workflow failure was real: an unpinned checkout action violated the repository's full-SHA action policy. The action was pinned and a corrected run passed.
+- The screenshot's original Android 17 Keyguard source workflow failure was real: the artifact-upload action was not pinned to a full commit SHA. It was pinned and the focused source ZIP workflow passed.
+- Later intermediate native/QEMU runs caught stale test expectations and workflow assertions (address-space capacity, expected task/reap count, and the old reaps=4 grep). These were corrected and re-run; the two successful workflows above are the current verification.
+- Do not interpret old failed run notifications as successful runs; those old runs remain failed in GitHub history.
 
-The SystemUI and LockScreenCore are tested software components. Passing host CI/QEMU kernel tests does not mean a real device Lock Screen is already active.
+Still not verified / still missing for a real visible device lock screen:
+- No QEMU virtio-gpu/ramfb or POCO/phone display controller driver and no real framebuffer mapping.
+- No QEMU virtio-input or phone touchscreen driver connected to the normalized touch pipeline.
+- No boot-time process loader/session manager that launches the native C++ Lock Screen controller as the trusted LOCKSCREEN-role task.
+- No production protected credential storage, TEE/hardware-backed verifier, credential enrollment, authenticated IPC or persistent anti-brute-force storage.
+- No live clock/battery/network/carrier/notification services connected to the UI.
+- No complete device ROM, Android image, APK, or flashable image.
+
+Important distinction:
+The native SystemUI UI/controller/compositor software path is host-tested. The kernel role gate is QEMU-tested with a synthetic LOCKSCREEN-role EL0 payload. QEMU does not boot or display the native C++ renderer/controller, and the synthetic payload does not verify a user PIN. Therefore this work is a tested native Lock Screen foundation, not a boot-active or physical-device Lock Screen.
