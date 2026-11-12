@@ -105,6 +105,7 @@ private:
     std::uint32_t green_color_{0xff74d6a2u};
     std::uint32_t orange_color_{0xffffc779u};
     std::uint32_t red_color_{0xffff8e98u};
+    bool light_theme_{false};
 };
 
 class SystemShellController final {
