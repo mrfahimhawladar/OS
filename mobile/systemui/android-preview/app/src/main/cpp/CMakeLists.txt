@@ -5,19 +5,19 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-set(SYSTEMUI_ROOT "\${CMAKE_CURRENT_LIST_DIR}/../../../../../")
+get_filename_component(SYSTEMUI_ROOT "\${CMAKE_CURRENT_LIST_DIR}/../../../../../" ABSOLUTE)
 set(RUNTIME_ROOT "\${SYSTEMUI_ROOT}/runtime")
 
 add_library(fahim_lockscreen_preview SHARED
     NativeBridge.cpp
-    "\${RUNTIME_ROOT}/src/LockScreenRenderer.cpp"
-    "\${RUNTIME_ROOT}/src/Compositor.cpp"
-    "\${RUNTIME_ROOT}/src/SessionGate.cpp"
+    \${RUNTIME_ROOT}/src/LockScreenRenderer.cpp
+    \${RUNTIME_ROOT}/src/Compositor.cpp
+    \${RUNTIME_ROOT}/src/SessionGate.cpp
 )
 
 target_include_directories(fahim_lockscreen_preview PRIVATE
-    "\${RUNTIME_ROOT}/include"
-    "\${SYSTEMUI_ROOT}/lockscreen/native"
+    \${RUNTIME_ROOT}/include
+    \${SYSTEMUI_ROOT}/lockscreen/native
 )
 
 target_compile_options(fahim_lockscreen_preview PRIVATE
@@ -25,4 +25,4 @@ target_compile_options(fahim_lockscreen_preview PRIVATE
 )
 
 find_library(android-log log)
-target_link_libraries(fahim_lockscreen_preview PRIVATE "\${android-log}")
+target_link_libraries(fahim_lockscreen_preview PRIVATE \${android-log})
