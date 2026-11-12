@@ -19,7 +19,7 @@ This is a device-independent native runtime foundation for the lock screen. It d
 
 ## Hardware integration status
 
-The framebuffer adapter works once a platform display driver supplies a mapped framebuffer and its actual format/stride. The input router works once a hardware input driver feeds normalized touch/pointer events. This repository currently has no QEMU virtio-gpu/virtio-input driver, phone display driver, touchscreen controller, or device-specific framebuffer mapping, so these components are not yet connected to physical or QEMU display/input hardware.
+The framebuffer adapter works once a platform display driver supplies a mapped framebuffer and its actual format/stride. Platform controller drivers implement `RawTouchDevice`; the input pipeline calibrates and normalizes their samples before routing. The input path still needs a real QEMU virtio-input or phone touchscreen controller driver. This repository currently has no QEMU virtio-gpu/virtio-input driver, phone display driver, touchscreen controller, or device-specific framebuffer mapping, so these components are not yet connected to physical or QEMU display/input hardware.
 
 The compositor and session gate are functional policy/rendering components and have host tests. They are not yet linked to an OS window manager/process manager or kernel lock gate. The current credential adapter is only an interface to a trusted storage/TEE service; no production credential store, hardware-backed secret, or persistent lockout backend exists. Missing backends fail closed.
 
