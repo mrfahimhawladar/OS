@@ -78,4 +78,25 @@ private:
     std::atomic<std::uint64_t> last_retry_after_ms_{0};
 };
 
+/*
+ * Owns the TEEC transport, protected backend and LockScreen verifier in the
+ * correct lifetime order. Construct this in the trusted Lock Screen service
+ * before constructing LockScreenCore with service.verifier().
+ */
+class TeeCredentialService final {
+public:
+    TeeCredentialService() noexcept;
+    TeeCredentialService(const TeeCredentialService&) = delete;
+    TeeCredentialService& operator=(const TeeCredentialService&) = delete;
+
+    bool available() const noexcept { return backend_.available(); }
+    ProtectedCredentialVerifier& verifier() noexcept { return verifier_; }
+    TeeProtectedCredentialBackend& backend() noexcept { return backend_; }
+
+private:
+    OpteeCredentialTransport transport_{};
+    TeeProtectedCredentialBackend backend_;
+    ProtectedCredentialVerifier verifier_;
+};
+
 }  // namespace fahim::security
