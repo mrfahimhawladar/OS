@@ -1,4 +1,5 @@
 #include "fahim/security/CredentialBackend.hpp"
+#include "fahim/security/TeeCredentialBackend.hpp"
 #include "fahim/security/KernelSessionControl.hpp"
 #include "fahim/systemui/LockScreenView.hpp"
 #include "fahim/input/InputDevice.hpp"
@@ -352,6 +353,116 @@ static void test_native_lock_screen_renderer_and_controller() {
     assert(compositor.surface_count() == 1u);
 }
 
+
+class FakeTeeCredentialTransport final : public fahim::security::TeeCredentialTransport {
+public:
+    bool connected{true};
+    bool enrolled{false};
+    bool locked{false};
+    std::uint64_t retry_after_ms{0};
+    std::uint32_t failures{0};
+    std::uint8_t test_pin[4]{'2', '4', '6', '8'};
+
+    bool ready() const noexcept override { return connected; }
+
+    fahim::security::TeeCredentialResult query(
+        fahim::security::TeeCredentialState& state) const noexcept override {
+        state.enrolled = enrolled;
+        state.failed_attempts = failures;
+        state.retry_after_ms = retry_after_ms;
+        if (!connected) return fahim::security::TeeCredentialResult::Unavailable;
+        if (!enrolled) return fahim::security::TeeCredentialResult::NotEnrolled;
+        if (locked) return fahim::security::TeeCredentialResult::LockedOut;
+        return fahim::security::TeeCredentialResult::Ok;
+    }
+
+    fahim::security::TeeCredentialResult enroll(
+        const std::uint8_t* pin, std::size_t length,
+        fahim::security::TeeCredentialState& state) const noexcept override {
+        if (!connected) return fahim::security::TeeCredentialResult::Unavailable;
+        if (enrolled) return fahim::security::TeeCredentialResult::AlreadyEnrolled;
+        if (pin == nullptr || length != sizeof(test_pin))
+            return fahim::security::TeeCredentialResult::Invalid;
+        auto* self = const_cast<FakeTeeCredentialTransport*>(this);
+        std::memcpy(self->test_pin, pin, length);
+        self->enrolled = true;
+        state.enrolled = true;
+        return fahim::security::TeeCredentialResult::Ok;
+    }
+
+    fahim::security::TeeCredentialResult verify(
+        const std::uint8_t* pin, std::size_t length,
+        fahim::security::TeeCredentialState& state) const noexcept override {
+        auto* self = const_cast<FakeTeeCredentialTransport*>(this);
+        if (!connected) return fahim::security::TeeCredentialResult::Unavailable;
+        if (!enrolled) return fahim::security::TeeCredentialResult::NotEnrolled;
+        if (locked) {
+            state.enrolled = true;
+            state.failed_attempts = failures;
+            state.retry_after_ms = retry_after_ms;
+            return fahim::security::TeeCredentialResult::LockedOut;
+        }
+        const bool accepted = pin != nullptr && length == sizeof(test_pin) &&
+            std::memcmp(pin, test_pin, sizeof(test_pin)) == 0;
+        if (accepted) {
+            self->failures = 0u;
+            self->retry_after_ms = 0u;
+            state.enrolled = true;
+            return fahim::security::TeeCredentialResult::Ok;
+        }
+        ++self->failures;
+        if (self->failures >= 5u) {
+            self->locked = true;
+            self->retry_after_ms = 30000u;
+            state.enrolled = true;
+            state.failed_attempts = self->failures;
+            state.retry_after_ms = self->retry_after_ms;
+            return fahim::security::TeeCredentialResult::LockedOut;
+        }
+        state.enrolled = true;
+        state.failed_attempts = self->failures;
+        return fahim::security::TeeCredentialResult::Rejected;
+    }
+};
+
+static void test_tee_credential_backend_adapter() {
+    FakeTeeCredentialTransport transport;
+    fahim::security::TeeProtectedCredentialBackend backend(&transport);
+    assert(backend.available());
+    fahim::security::TeeCredentialState state{};
+    assert(backend.query_state(state) ==
+           fahim::security::TeeCredentialResult::NotEnrolled);
+    assert(!state.enrolled);
+
+    const std::uint8_t pin[]{'2', '4', '6', '8'};
+    assert(backend.enroll_pin(pin, sizeof(pin)) ==
+           fahim::security::TeeCredentialResult::Ok);
+    assert(backend.enroll_pin(pin, sizeof(pin)) ==
+           fahim::security::TeeCredentialResult::AlreadyEnrolled);
+
+    ProtectedCredentialVerifier verifier(&backend);
+    LockScreenCore core(verifier);
+    enter_pin(core, "2468");
+    assert(core.submit_pin() == fahim::systemui::SubmitResult::Accepted);
+    core.lock();
+
+    // The mock transport models a lockout surviving destruction/recreation of
+    // LockScreenCore. The real TA stores this deadline in RPMB secure storage.
+    transport.locked = true;
+    transport.retry_after_ms = 125000u;
+    LockScreenCore rebooted_core(verifier);
+    enter_pin(rebooted_core, "2468");
+    assert(rebooted_core.submit_pin() == fahim::systemui::SubmitResult::LockedOut);
+    assert(rebooted_core.lockout_remaining() == std::chrono::milliseconds(125000));
+
+    transport.connected = false;
+    assert(!backend.available());
+    ProtectedCredentialVerifier no_tee_verifier(&backend);
+    std::uint8_t unavailable_pin[]{'2', '4', '6', '8'};
+    assert(no_tee_verifier.verify_pin(unavailable_pin, sizeof(unavailable_pin)) ==
+           VerificationResult::TemporarilyUnavailable);
+}
+
 static void test_missing_credential_backend_fails_closed() {
     ProtectedCredentialVerifier verifier(nullptr);
     std::uint8_t pin[]{'2', '4', '6', '8'};
@@ -366,6 +477,7 @@ int main() {
     test_gate_and_compositor();
     test_kernel_session_bridge();
     test_native_lock_screen_renderer_and_controller();
+    test_tee_credential_backend_adapter();
     test_missing_credential_backend_fails_closed();
     std::cout << "Fahim SystemUI runtime tests: PASS\n";
     return 0;
