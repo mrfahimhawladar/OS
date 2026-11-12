@@ -464,6 +464,21 @@ static void test_tee_credential_backend_adapter() {
            VerificationResult::TemporarilyUnavailable);
 }
 
+
+static void test_optee_transport_fails_closed_without_client_support() {
+    fahim::security::OpteeCredentialTransport transport;
+    assert(!transport.ready());
+
+    fahim::security::TeeProtectedCredentialBackend backend(&transport);
+    assert(!backend.available());
+
+    std::uint8_t pin[]{'2', '4', '6', '8'};
+    assert(backend.verify_pin_and_update_policy(pin, sizeof(pin)) ==
+           VerificationResult::TemporarilyUnavailable);
+    assert(backend.enroll_pin(pin, sizeof(pin)) ==
+           fahim::security::TeeCredentialResult::Unavailable);
+}
+
 static void test_missing_credential_backend_fails_closed() {
     ProtectedCredentialVerifier verifier(nullptr);
     std::uint8_t pin[]{'2', '4', '6', '8'};
@@ -479,6 +494,7 @@ int main() {
     test_kernel_session_bridge();
     test_native_lock_screen_renderer_and_controller();
     test_tee_credential_backend_adapter();
+    test_optee_transport_fails_closed_without_client_support();
     test_missing_credential_backend_fails_closed();
     std::cout << "Fahim SystemUI runtime tests: PASS\n";
     return 0;
