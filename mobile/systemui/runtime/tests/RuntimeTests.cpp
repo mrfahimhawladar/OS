@@ -450,7 +450,8 @@ static void test_tee_credential_backend_adapter() {
     // LockScreenCore. The real TA stores this deadline in RPMB secure storage.
     transport.locked = true;
     transport.retry_after_ms = 125000u;
-    LockScreenCore rebooted_core(verifier);
+    auto secure_time = LockScreenCore::TimePoint{};
+    LockScreenCore rebooted_core(verifier, [&secure_time] { return secure_time; });
     enter_pin(rebooted_core, "2468");
     assert(rebooted_core.submit_pin() == fahim::systemui::SubmitResult::LockedOut);
     assert(rebooted_core.lockout_remaining() == std::chrono::milliseconds(125000));
