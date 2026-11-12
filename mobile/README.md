@@ -123,3 +123,15 @@ Build and run the SystemUI tests:
 The scheduler gate starts locked. The QEMU self-test now creates a synthetic EL0 task assigned the kernel-only LOCKSCREEN role; it invokes SVC 9 to unlock, after which the four test application tasks are allowed to run. This validates the scheduler-level gate and SVC policy, not production PIN verification or boot-time service launch.
 
 The native C++ renderer/controller path is host-tested and connects the touch queue, PIN UI, protected credential interface, kernel-session bridge and compositor surface. A TEEC enrollment client now calls the separate Provisioner TA without transmitting PIN data. The Provisioner TA and secure TUI pseudo-TA compile in CI, but the board-specific secure display/input HAL is intentionally unavailable by default. Therefore initial PIN enrollment still fails closed on current QEMU/CI and on any board without a real secure TUI driver. The Lock Screen is **not yet visibly boot-active** on QEMU or a phone, and no smartphone ROM or flashable image exists.
+
+## Native System Shell implementation status
+
+The native C++ System Shell now includes:
+- Home screen with only implemented native system entries.
+- Control Center backed by platform service calls; unavailable radio/display drivers are reported unavailable.
+- Settings navigation and appearance/security/about entry points.
+- Authenticator screen backed by a secure-vault interface; the Normal World receives only account metadata and generated codes, never TOTP secrets.
+- About/device capability page.
+- Kernel SYSTEM_SHELL scheduler role, blocked while the session is locked.
+
+These are native OS runtime components compiled into the SystemUI library. They are not boot-active in the QEMU graphical environment yet: the process manager/ELF loader, QEMU virtual display/input drivers, live platform-service providers and secure TOTP-vault TA remain unconnected. No Android Activity or screenshot is used as the operating-system implementation.

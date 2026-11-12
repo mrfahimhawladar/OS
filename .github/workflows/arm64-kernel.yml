@@ -2,7 +2,7 @@ name: Build Fahim OS ARM64 Kernel
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, feature/native-system-shell ]
     paths:
       - "mobile/kernel/**"
       - "mobile/platforms/qemu-aarch64/**"

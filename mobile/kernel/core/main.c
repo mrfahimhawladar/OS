@@ -350,6 +350,7 @@ static void run_kernel_session_gate_self_test(void) {
     if (!fahim_scheduler_session_locked() ||
         fahim_scheduler_role_allowed(FAHIM_TASK_ROLE_APPLICATION) != 0 ||
         fahim_scheduler_role_allowed(FAHIM_TASK_ROLE_LOCKSCREEN) == 0 ||
+        fahim_scheduler_role_allowed(FAHIM_TASK_ROLE_SYSTEM_SHELL) != 0 ||
         fahim_scheduler_role_allowed(FAHIM_TASK_ROLE_EMERGENCY) == 0) {
         console_write("Kernel Lock Gate self-test: FAIL (locked boot policy)\n");
         halt_forever();
@@ -358,6 +359,7 @@ static void run_kernel_session_gate_self_test(void) {
     /* Only trusted kernel code can alter the gate before the scheduler starts. */
     if (fahim_scheduler_set_session_locked(0u) != 0 ||
         fahim_scheduler_role_allowed(FAHIM_TASK_ROLE_APPLICATION) == 0 ||
+        fahim_scheduler_role_allowed(FAHIM_TASK_ROLE_SYSTEM_SHELL) == 0 ||
         fahim_scheduler_set_session_locked(1u) != 0 ||
         fahim_scheduler_role_allowed(FAHIM_TASK_ROLE_APPLICATION) != 0) {
         console_write("Kernel Lock Gate self-test: FAIL (lock transition)\n");

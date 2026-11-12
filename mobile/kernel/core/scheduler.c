@@ -88,7 +88,7 @@ static int has_live_tasks(void) {
 }
 
 static int task_role_allowed(uint32_t role) {
-    if (role > (uint32_t)FAHIM_TASK_ROLE_EMERGENCY) {
+    if (role > (uint32_t)FAHIM_TASK_ROLE_SYSTEM_SHELL) {
         return 0;
     }
     return session_locked == 0 ||
@@ -266,7 +266,7 @@ int fahim_scheduler_create_user_with_role(uint32_t address_space,
     if (scheduler_active || task_count >= FAHIM_MAX_USER_TASKS ||
         address_space == UINT32_MAX || entry == 0u || user_stack_top == 0u ||
         pid > UINT32_MAX || find_task_by_pid((uint32_t)pid) >= 0 ||
-        (uint32_t)role > (uint32_t)FAHIM_TASK_ROLE_EMERGENCY) {
+        (uint32_t)role > (uint32_t)FAHIM_TASK_ROLE_SYSTEM_SHELL) {
         return -1;
     }
 

@@ -2,7 +2,7 @@ name: Lock screen native core
 
 on:
   push:
-    branches: [main]
+    branches: [main, feature/native-system-shell]
     paths:
       - "mobile/systemui/lockscreen/native/**"
       - "mobile/systemui/runtime/**"

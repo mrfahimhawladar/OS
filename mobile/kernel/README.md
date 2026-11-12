@@ -225,3 +225,9 @@ The EL0 SVC ABI now exposes:
 The QEMU scheduler test creates four application-role tasks while the session is locked, plus a synthetic EL0 task assigned the kernel-only LOCKSCREEN role. The scheduler skips the four application tasks, runs the Lock Screen task, and that task invokes SVC 9 to unlock the session. The four application tasks then run. The test checks four blocked task selections, five total task/address-space reaps, and restores the locked state after the synthetic process test. The synthetic payload directly invokes the kernel SVC; it does not verify a real user PIN.
 
 This is a kernel scheduler gate foundation. A trusted task loader/process manager and boot-created Lock Screen task are still required before it can protect a real interactive session.
+
+## Native System Shell process role
+
+The scheduler task-role enum now includes FAHIM_TASK_ROLE_SYSTEM_SHELL. The role is not runnable while the session lock is active; after the trusted Lock Screen opens the session gate, System Shell tasks may be scheduled. The QEMU lock-gate self-test asserts that SYSTEM_SHELL is denied while locked and allowed after unlock.
+
+This is a role/policy integration only. No boot process manager or ELF loader yet creates a persistent System Shell task; the current QEMU test uses a synthetic Lock Screen payload for the gate transition. A boot-created shell process plus QEMU virtual display and input drivers remain required for a visible graphical QEMU desktop.
