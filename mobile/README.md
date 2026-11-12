@@ -96,3 +96,25 @@ The first ARM64 kernel is small enough for a cross-compilation CI job. A full na
 **Not implemented:** page allocator, MMU, interrupts, timer, scheduler, IPC, filesystem, graphics, lock screen, home screen, applications, and physical-phone drivers.
 
 The existing root-level x86 files and `preview.html` are a separate learning prototype. They are not Fahim OS Mobile.
+
+## 8. Lock Screen / SystemUI runtime foundation
+
+The ARM64 kernel baseline has been restored to this repository and its existing QEMU workflow was re-run successfully. It currently verifies the generic QEMU boot, MMU/address-space path and scheduler; it does not yet provide a graphics or touchscreen device driver.
+
+The native SystemUI layer now includes:
+
+- A bounds/stride-checked linear framebuffer adapter for XRGB8888 and RGB565.
+- A normalized touch/pointer router which keeps input on the Lock Screen while locked and recognizes swipe-up, camera and flashlight actions.
+- A fixed-capacity alpha compositor with z-order and an explicit session gate. Application surfaces and application input are denied until the native lock state is Unlocked.
+- A protected-credential backend adapter which fails closed when no trusted backend is connected.
+- CMake tests for pixel layout/clipping, touch routing, locked-surface suppression, unlock transition and missing-credential-backend behavior.
+
+Build and run the SystemUI tests:
+
+    cmake -S mobile/systemui -B build/systemui
+    cmake --build build/systemui --parallel
+    ctest --test-dir build/systemui --output-on-failure
+
+**Still not connected:** QEMU virtio-gpu/simple-framebuffer mapping, physical-phone display controller, touchscreen/virtio-input driver, an OS window/session manager, kernel-enforced process/session lock gate, TEE/secure credential storage and persistent anti-brute-force state. The framebuffer adapter expects a real platform driver to supply a validated mapped framebuffer; the credential adapter expects a trusted service to implement atomic verification and persistent policy. Both are integration contracts, not fake hardware.
+
+The Lock Screen is **not boot-active** and the repository does not yet contain a flashable smartphone image or ROM.
