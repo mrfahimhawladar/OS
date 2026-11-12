@@ -175,7 +175,7 @@ void SystemShellRenderer::base(const SystemShellState& state,
          std::max(1, scale_pos(1, scale)), text_color_);
     text(scale_pos(150, scale), scale_pos(23, scale), state.status.network,
          std::max(1, scale_pos(1, scale)), muted_color_);
-    char battery[5] = {'-', '-', '%', '\\0', '\\0'};
+    char battery[5] = {'-', '-', '%', '\0', '\0'};
     if (state.status.battery_valid) {
         const unsigned percent = state.status.battery_percent > 100u
             ? 100u : state.status.battery_percent;
@@ -353,7 +353,7 @@ void SystemShellRenderer::render_authenticator(const SystemShellState& state) no
             char remaining[3] = {
             static_cast<char>('0' + ((state.codes[i].seconds_remaining / 10u) % 10u)),
             static_cast<char>('0' + (state.codes[i].seconds_remaining % 10u)),
-            '\\0'
+            '\0'
         };
         text(scale_pos(135, s), scale_pos(y + 83, s), remaining, 1, orange_color_);
         }
