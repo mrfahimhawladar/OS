@@ -166,6 +166,51 @@ static void test_gate_and_compositor() {
     assert(!compositor.remove_surface(99u));
 }
 
+
+static void test_touchscreen_input_pipeline() {
+    class QueueDevice final : public fahim::input::RawTouchDevice {
+    public:
+        std::vector<fahim::input::RawTouchSample> samples;
+        std::size_t next{0};
+        bool read_sample(fahim::input::RawTouchSample& sample) noexcept override {
+            if (next >= samples.size()) return false;
+            sample = samples[next++];
+            return true;
+        }
+    } device;
+
+    device.samples = {
+        {PointerPhase::Down, 2048, 4000, 100},
+        {PointerPhase::Up, 2048, 0, 140}
+    };
+    fahim::input::TouchscreenCalibrator calibration(
+        fahim::input::TouchCalibration{0, 4095, 0, 4095, 480, 800,
+                                       fahim::input::Rotation::Deg0});
+    assert(calibration.valid());
+
+    fahim::input::TouchInputPipeline pipeline(device, calibration);
+    assert(pipeline.valid());
+    assert(pipeline.pump_one());
+    assert(pipeline.pump_one());
+    assert(pipeline.queued_events() == 2u);
+
+    LockScreenInputRouter router(72u);
+    fahim::ui::InputDecision decision{};
+    assert(pipeline.dispatch_one(router, decision));
+    assert(decision.target == InputTarget::LockScreen);
+    assert(pipeline.dispatch_one(router, decision));
+    assert(decision.target == InputTarget::LockScreen);
+    assert(decision.action == LockScreenAction::BeginUnlock);
+    assert(!pipeline.dispatch_one(router, decision));
+
+    fahim::input::TouchscreenCalibrator invalid(
+        fahim::input::TouchCalibration{10, 10, 0, 4095, 480, 800,
+                                       fahim::input::Rotation::Deg0});
+    assert(!invalid.valid());
+    fahim::ui::PointerEvent ignored{};
+    assert(!invalid.normalize(device.samples[0], ignored));
+}
+
 static void test_missing_credential_backend_fails_closed() {
     ProtectedCredentialVerifier verifier(nullptr);
     std::uint8_t pin[]{'2', '4', '6', '8'};
@@ -176,6 +221,7 @@ static void test_missing_credential_backend_fails_closed() {
 int main() {
     test_framebuffer();
     test_input_router();
+    test_touchscreen_input_pipeline();
     test_gate_and_compositor();
     test_missing_credential_backend_fails_closed();
     std::cout << "Fahim SystemUI runtime tests: PASS\n";
