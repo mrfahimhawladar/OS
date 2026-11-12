@@ -508,10 +508,15 @@ static TEE_Result verify_credential(TEE_Param params[4])
         goto unavailable;
 
     if (record.retry_until_ms > now_ms) {
-        retry_after = record.retry_until_ms - now_ms;
         fill_record_response(params, FAHIM_CRED_RESULT_LOCKED_OUT,
                              &record, now_ms);
         goto done;
+    }
+
+    /* Start a fresh five-attempt window after an expired secure lockout. */
+    if (record.retry_until_ms != 0u) {
+        record.retry_until_ms = 0u;
+        record.failed_attempts = 0u;
     }
 
     result = calculate_pin_verifier(pin, length, record.salt, candidate);
