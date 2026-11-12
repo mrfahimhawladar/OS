@@ -38,3 +38,9 @@ if(FAHIM_ENABLE_OPTEE_CLIENT)
     target_compile_definitions(fahim_systemui_runtime PRIVATE FAHIM_ENABLE_OPTEE_CLIENT=1)
     target_link_libraries(fahim_systemui_runtime PUBLIC ${FAHIM_TEEC_LIBRARY} Threads::Threads)
 endif()
+
+
+add_executable(native_lockscreen_snapshot tools/RenderNativeLockScreen.cpp)
+target_compile_features(native_lockscreen_snapshot PRIVATE cxx_std_17)
+target_compile_options(native_lockscreen_snapshot PRIVATE -Wall -Wextra -Wpedantic -Werror)
+target_link_libraries(native_lockscreen_snapshot PRIVATE fahim_systemui_runtime fahim_lockscreen_core)
