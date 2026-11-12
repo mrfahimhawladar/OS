@@ -129,4 +129,4 @@ Not yet implemented/verified:
 - OP-TEE secure TOTP vault TA, secure OTP account enrollment/storage, and protected time source.
 - Device image/ROM integration and physical-device boot testing.
 
-Therefore these are native C++ OS runtime components with host CI and kernel-role QEMU verification; the complete graphical System Shell is not yet boot-active on the QEMU monitor or POCO phone.
+Therefore these are native C++ OS runtime components with host CI and kernel-role QEMU verification; the complete graphical System Shell is not yet boot-active in the QEMU graphical environment. The current target is the independent Fahim OS virtual-machine build, not a phone port.
