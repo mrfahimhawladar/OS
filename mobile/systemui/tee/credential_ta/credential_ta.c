@@ -100,13 +100,13 @@ static TEE_Result verify_secure_platform(void)
         return TEE_ERROR_NOT_SUPPORTED;
 
     /*
-     * TA persistent time must be backed by a TEE-controlled secure clock.
-     * REE-controlled time can be rolled back to bypass a timed lockout.
+     * The TEE system clock must be hardware protected. A REE-controlled
+     * clock can be rolled back to bypass a timed lockout.
      */
     result = TEE_GetPropertyAsU32(
         TEE_PROPSET_TEE_IMPLEMENTATION,
-        "gpd.tee.TAPersistentTime.protectionLevel",
-        &persistent_time_level);
+        "gpd.tee.systemTime.protectionLevel",
+        &system_time_level);
     if (result != TEE_SUCCESS || persistent_time_level < 1000u)
         return TEE_ERROR_NOT_SUPPORTED;
 
@@ -121,20 +121,15 @@ static TEE_Result get_secure_time_ms(uint64_t *time_ms)
     if (time_ms == NULL)
         return TEE_ERROR_BAD_PARAMETERS;
 
-    result = TEE_GetTAPersistentTime(&time);
-    if (result == TEE_ERROR_TIME_NOT_SET) {
-        TEE_Time initial_time;
-        initial_time.seconds = 0u;
-        initial_time.millis = 0u;
-        result = TEE_SetTAPersistentTime(&initial_time);
-        secure_clear(&initial_time, sizeof(initial_time));
-        if (result != TEE_SUCCESS)
-            return result;
-        result = TEE_GetTAPersistentTime(&time);
-    }
-
-    /* A corrupted secure clock must be recovered by the platform owner. */
-    if (result != TEE_SUCCESS || time.millis >= 1000u) {
+    /*
+     * Use the TEE system clock rather than TA persistent time. Upstream
+     * OP-TEE derives TA persistent time from system time plus an offset;
+     * its declared protection level may therefore be only 100. The
+     * systemTime protection-level property above is the relevant platform
+     * declaration for this secure deadline.
+     */
+    TEE_GetSystemTime(&time);
+    if (time.millis >= 1000u) {
         secure_clear(&time, sizeof(time));
         return TEE_ERROR_SECURITY;
     }
