@@ -54,8 +54,27 @@ jobs:
       - name: Build installable Android APK
         run: |
           gradle --no-daemon --stacktrace -p mobile/systemui/android-preview assembleDebug
-          test -s mobile/systemui/android-preview/app/build/outputs/apk/debug/app-debug.apk
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging mobile/systemui/android-preview/app/build/outputs/apk/debug/app-debug.apk | head -n 5
+          APK="mobile/systemui/android-preview/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | head -n 5
+          # Fail the build if Kotlin Activity bytecode is absent from the packaged DEX.
+          found=0
+          while IFS= read -r dex; do
+            if unzip -p "$APK" "$dex" | strings | grep -q "com/fahimos/preview/MainActivity"; then
+              found=1
+            fi
+          done < <(unzip -Z1 "$APK" | grep -E '^classes([0-9]+)?\\.dex
+
+      - name: Upload Android preview APK
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: fahim-os-native-lockscreen-android-preview
+          path: mobile/systemui/android-preview/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+)
+          test "$found" -eq 1
+          echo "Verified com.fahimos.preview.MainActivity exists in APK DEX."
 
       - name: Upload Android preview APK
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
