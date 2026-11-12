@@ -52,3 +52,11 @@ The caller must provide a valid framebuffer-backed `DisplayDevice`, ARGB scratch
 - Live clock, battery, carrier, network and notification services.
 
 This gives the native software path and tested UI/controller integration. It does **not** yet put a visible Lock Screen on the QEMU monitor or any phone, because there is no connected display/input hardware driver or boot-launched Lock Screen service. No device ROM or flashable image is produced.
+
+## Secure credential backend
+
+The native runtime now includes TeeCredentialBackend and a GlobalPlatform TEEC client transport. The matching OP-TEE Trusted Application lives in mobile/systemui/tee/credential_ta/. PIN derivation and verification run in Secure World using a per-device TEE-held HMAC-SHA256 pepper plus a random per-enrollment salt; the PIN itself is not persisted. The TA stores its verifier and failed-attempt/secure-deadline state in private RPMB Trusted Storage and refuses authentication unless the TEE reports hardware anti-rollback level 1000 and TEE-controlled persistent-time level 1000. It fails closed on missing hardware properties or any storage/clock failure.
+
+The FAHIM_ENABLE_OPTEE_CLIENT CMake option is OFF by default. Without an installed OP-TEE client library, the transport is unavailable and PIN verification returns unavailable rather than accepting a software fallback. The native CI uses a fake transport for adapter behavior tests; the separate OP-TEE workflow compiles the real TA against a pinned upstream developer kit.
+
+Enrollment is intentionally more restricted than verification. The TA accepts enrollment only from a separately signed Secure-World provisioning TA with a pinned UUID. A normal-world TEEC_LOGIN_PUBLIC caller cannot enroll or replace a PIN. That provisioning TA and its Trusted UI/physical-presence path have not yet been implemented, so first-time production enrollment is not yet available. See mobile/systemui/tee/README.md for required platform setup and exact verification boundaries.
