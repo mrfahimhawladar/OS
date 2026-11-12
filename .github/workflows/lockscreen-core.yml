@@ -41,7 +41,7 @@ jobs:
           cmake -S third_party/optee_client -B third_party/optee_client/build \
             -DWITH_TEEACL=OFF -DWITH_ASTEEC=OFF
           cmake --build third_party/optee_client/build --target teec --parallel 2
-          test -e third_party/optee_client/build/libteec/libteec.so
+          test -e third_party/optee_client/build/libteec/libteec.a
 
       - name: Configure SystemUI (fail-closed transport stub)
         run: cmake -S mobile/systemui -B build/systemui
@@ -51,7 +51,7 @@ jobs:
           cmake -S mobile/systemui -B build/systemui-optee \
             -DFAHIM_ENABLE_OPTEE_CLIENT=ON \
             -DFAHIM_TEEC_INCLUDE_DIR="$GITHUB_WORKSPACE/third_party/optee_client/libteec/include" \
-            -DFAHIM_TEEC_LIBRARY="$GITHUB_WORKSPACE/third_party/optee_client/build/libteec/libteec.so"
+            -DFAHIM_TEEC_LIBRARY="$GITHUB_WORKSPACE/third_party/optee_client/build/libteec/libteec.a"
 
       - name: Build SystemUI components
         run: |
