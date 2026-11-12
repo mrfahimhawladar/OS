@@ -34,6 +34,20 @@ static void secure_clear(void *buffer, size_t length)
         *p++ = 0u;
 }
 
+/* Compare fixed-length secret verifiers without data-dependent early exit. */
+static bool constant_time_equal(const uint8_t *left,
+                                const uint8_t *right,
+                                size_t length)
+{
+    volatile uint8_t difference = 0u;
+    size_t i;
+
+    for (i = 0u; i < length; ++i)
+        difference |= (uint8_t)(left[i] ^ right[i]);
+
+    return difference == 0u;
+}
+
 static void set_response(TEE_Param params[4], uint32_t result,
                          uint32_t enrolled, uint32_t attempts,
                          uint64_t retry_after_ms)
@@ -507,7 +521,7 @@ static TEE_Result verify_credential(TEE_Param params[4])
         goto unavailable;
 
     matches = length == record.pin_length &&
-        TEE_MemCompare(candidate, record.verifier, sizeof(candidate)) == 0;
+        constant_time_equal(candidate, record.verifier, sizeof(candidate));
 
     record.last_seen_ms = now_ms;
     if (matches) {
