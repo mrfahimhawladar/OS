@@ -1,38 +1,68 @@
-Fahim OS Lock Screen and SystemUI verification report
+Fahim OS Lock Screen, SystemUI and Secure Credential verification report
 Date: 2026-11-12
 
-Corrected successful GitHub Actions runs:
-- Native SystemUI runtime: https://github.com/mrfahimhawladar/OS/actions/runs/43135247781
-- ARM64 kernel + QEMU + lock gate + controlled exception: https://github.com/mrfahimhawladar/OS/actions/runs/43135610148
+## Native SystemUI CI
 
-Native SystemUI verification:
-- CMake configure: PASS.
-- Native C++17 compilation with -Wall -Wextra -Wpedantic -Werror: PASS.
-- CTest: 2/2 passed (lockscreen_core_tests, systemui_runtime_tests).
-- Runtime test exercises framebuffer validation/clipping, XRGB8888/RGB565 writes, calibrated touch input queue, swipe-to-bouncer, on-screen PIN entry with an explicitly test-only verifier, native Lock Screen bitmap registration/removal in the compositor, mock kernel SVC unlock/relock bridge, locked app-surface filtering, and fail-closed missing credential backend.
+Successful run:
+- https://github.com/mrfahimhawladar/OS/actions/runs/43215796843
 
-ARM64 kernel and QEMU verification:
-- Freestanding ARM64 kernel cross-build and ELF inspection: PASS.
-- Main QEMU boot: PASS.
-- Kernel session starts locked; scheduler skips four APPLICATION-role tasks while locked.
-- A synthetic EL0 task assigned the kernel-only LOCKSCREEN role calls SVC 9 to unlock; then the four test app tasks run.
-- QEMU reports five task/address-space reaps and four blocked application-task selections.
-- Process lifecycle, timer/GIC, address-space, and controlled BRK exception tests: PASS.
-- Production ARM64 kernel ELF artifact uploaded as `fahim-os-arm64-kernel` (workflow artifact; not a phone image).
+Results:
+- CMake configure and build: PASS with OP-TEE client disabled and enabled.
+- Enabled branch links against upstream GlobalPlatform libteec built from pinned OP-TEE Client commit 9f4414f62dfc5692fd39f760515ce2d344d07b6d.
+- CTest: 2/2 tests passed in each configuration (lockscreen_core_tests, systemui_runtime_tests).
+- Runtime tests cover framebuffer validation/clipping, XRGB8888/RGB565 writes, calibrated touch input, swipe-to-bouncer, on-screen PIN entry with a test-only verifier, native Lock Screen bitmap registration/removal in the compositor, mock kernel SVC unlock/relock, locked app-surface filtering, TEE backend result mapping, enrollment/duplicate-enrollment response mapping, secure retry deadline mapping across a new LockScreenCore, and fail-closed operation when the TEE transport is unavailable.
+- The CI runner has no TEE device. The real TEEC client path is compile/link-tested; the no-device path is expected to return unavailable and cannot authenticate.
 
-Failure history and corrections:
-- The screenshot's original native workflow failure was real: an unpinned checkout action violated the repository's full-SHA action policy. The action was pinned and a corrected run passed.
-- The screenshot's original Android 17 Keyguard source workflow failure was real: the artifact-upload action was not pinned to a full commit SHA. It was pinned and the focused source ZIP workflow passed.
-- Later intermediate native/QEMU runs caught stale test expectations and workflow assertions (address-space capacity, expected task/reap count, and the old reaps=4 grep). These were corrected and re-run; the two successful workflows above are the current verification.
-- Do not interpret old failed run notifications as successful runs; those old runs remain failed in GitHub history.
+## OP-TEE Secure World Trusted Application CI
 
-Still not verified / still missing for a real visible device lock screen:
-- No QEMU virtio-gpu/ramfb or POCO/phone display controller driver and no real framebuffer mapping.
-- No QEMU virtio-input or phone touchscreen driver connected to the normalized touch pipeline.
-- No boot-time process loader/session manager that launches the native C++ Lock Screen controller as the trusted LOCKSCREEN-role task.
-- No production protected credential storage, TEE/hardware-backed verifier, credential enrollment, authenticated IPC or persistent anti-brute-force storage.
-- No live clock/battery/network/carrier/notification services connected to the UI.
-- No complete device ROM, Android image, APK, or flashable image.
+Successful run:
+- https://github.com/mrfahimhawladar/OS/actions/runs/43215425700
 
-Important distinction:
-The native SystemUI UI/controller/compositor software path is host-tested. The kernel role gate is QEMU-tested with a synthetic LOCKSCREEN-role EL0 payload. QEMU does not boot or display the native C++ renderer/controller, and the synthetic payload does not verify a user PIN. Therefore this work is a tested native Lock Screen foundation, not a boot-active or physical-device Lock Screen.
+Results:
+- OP-TEE OS developer kit exported from pinned OP-TEE OS commit bffdda07ee61910cc63f45c45838fb2b59288c71.
+- Fahim credential TA cross-compiled successfully.
+- ELF inspection: ELF64, AArch64.
+- Signed .ta package generated and uploaded as artifact `fahim-os-credential-ta-dev-signed`.
+- Artifact ID: 13943227381.
+- Artifact SHA-256: 149c6bc231d93e218710fb883288fa57a6a9abe8b4f833001ce1bfcb18ffd6e3.
+- Artifact expires 2026-12-12.
+
+**Signing warning:** CI uses OP-TEE's bundled default development TA signing key. The artifact proves compile/link/signing format only. It is NOT a production-trusted package. The device owner must re-sign it with the platform's protected TA signing key and configure the matching trust anchor before installation.
+
+## Credential design implemented in source
+
+- OP-TEE TA source: `mobile/systemui/tee/credential_ta/credential_ta.c`.
+- C++ transport/backend: `mobile/systemui/runtime/src/TeeCredentialBackend.cpp`.
+- Owning runtime wrapper: `TeeCredentialService`.
+- Shared command protocol: `mobile/systemui/tee/include/fahim_credential_protocol.h`.
+- The TA accepts numeric PINs of 4–16 digits (production recommendation: 6+ digits).
+- It generates a random 256-bit salt and a TEE-held HMAC-SHA256 pepper key during enrollment. Only the salted HMAC verifier, format metadata, failed-attempt count, lockout level, retry deadline and last-seen secure time are stored; the raw PIN is not stored.
+- Credential and pepper objects use `TEE_STORAGE_PRIVATE_RPMB`.
+- The TA requires `gpd.tee.trustedStorage.antiRollback.protectionLevel >= 1000` and `gpd.tee.systemTime.protectionLevel >= 1000`. Missing/weak capability, storage errors, clock rollback, malformed records or missing pepper fail closed.
+- Five failures trigger persistent escalating lockout (30 seconds upward, capped at one hour); success resets the failure and escalation state.
+- The TA creates the pepper only during enrollment; verification never silently recreates a missing pepper.
+
+## Explicitly not yet production-integrated
+
+- No OP-TEE Secure World/BL32 is deployed or launched by Fahim OS's current boot chain.
+- No device RPMB key, RPMB secure storage backend or TEE-protected system clock has been provisioned or tested on physical hardware.
+- No production TA signing key/trust anchor is configured. The CI key is development-only.
+- Enrollment is accepted only from a separately signed TEE Trusted Application with pinned UUID `28e3b2d4-4a20-4f91-9a11-464148494d50`. That provisioning TA and its Trusted UI/physical-presence flow are not implemented here. Therefore first-time credential enrollment is intentionally unavailable to the public TEEC client.
+- The native runtime is not boot-launched as a trusted Lock Screen service. The kernel QEMU role-gate test uses a synthetic LOCKSCREEN-role payload; it does not boot the native renderer or verify a real PIN.
+- The runner's TEEC-enabled tests have no TEE hardware. Passing them proves the client branch compiles/links and unavailable hardware fails closed; it does not prove secure-world invocation on a device.
+
+## Kernel and device Lock Screen boundary
+
+Previously verified ARM64 kernel/QEMU run:
+- https://github.com/mrfahimhawladar/OS/actions/runs/43135610148
+- Kernel build, ELF inspection, QEMU boot, locked scheduler gate, synthetic LOCKSCREEN-role SVC 9 unlock, process lifecycle and controlled BRK exception tests: PASS.
+
+Still required for a real visible, usable phone Lock Screen:
+- QEMU virtio-gpu/ramfb or phone display controller driver and framebuffer mapping.
+- QEMU virtio-input or physical touchscreen driver.
+- Boot-time trusted process/session manager which launches the native Lock Screen with the kernel-assigned LOCKSCREEN role.
+- OP-TEE secure-world integration, RPMB/time provisioning, production TA signing and trusted enrollment/Trusted UI.
+- Authenticated service IPC and live clock, battery, carrier, network and notification services.
+- Complete board port, ROM/image integration and recovery plan.
+
+Therefore: the credential implementation and build artefacts now exist and CI tests pass, but production PIN enrollment/authentication and boot-active Lock Screen have NOT been verified on QEMU hardware or a physical phone. No Android image, ROM, APK or flashable phone image is produced by these runs.
