@@ -70,6 +70,7 @@ public:
                        TouchscreenCalibrator calibrator) noexcept;
 
     bool pump_one() noexcept;
+    bool next_event(fahim::ui::PointerEvent& event) noexcept;
     bool dispatch_one(fahim::ui::LockScreenInputRouter& router,
                       fahim::ui::InputDecision& decision) noexcept;
     std::size_t queued_events() const noexcept { return queue_.size(); }
