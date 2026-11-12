@@ -31,16 +31,27 @@ jobs:
       - name: Check out source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Install OP-TEE Client development package
+      - name: Fetch pinned OP-TEE Client API source
         run: |
-          sudo apt-get update
-          sudo apt-get install -y optee-client-dev
+          git clone https://github.com/OP-TEE/optee_client.git third_party/optee_client
+          git -C third_party/optee_client checkout 9f4414f62dfc5692fd39f760515ce2d344d07b6d
+
+      - name: Build upstream GlobalPlatform libteec
+        run: |
+          cmake -S third_party/optee_client -B third_party/optee_client/build \
+            -DWITH_TEEACL=OFF -DWITH_ASTEEC=OFF
+          cmake --build third_party/optee_client/build --target teec --parallel 2
+          test -e third_party/optee_client/build/libteec/libteec.so
 
       - name: Configure SystemUI (fail-closed transport stub)
         run: cmake -S mobile/systemui -B build/systemui
 
       - name: Configure SystemUI (real GlobalPlatform TEEC client)
-        run: cmake -S mobile/systemui -B build/systemui-optee -DFAHIM_ENABLE_OPTEE_CLIENT=ON
+        run: |
+          cmake -S mobile/systemui -B build/systemui-optee \
+            -DFAHIM_ENABLE_OPTEE_CLIENT=ON \
+            -DFAHIM_TEEC_INCLUDE_DIR="$GITHUB_WORKSPACE/third_party/optee_client/libteec/include" \
+            -DFAHIM_TEEC_LIBRARY="$GITHUB_WORKSPACE/third_party/optee_client/build/libteec/libteec.so"
 
       - name: Build SystemUI components
         run: |
