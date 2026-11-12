@@ -2,6 +2,7 @@
 
 #include "fahim/security/CredentialBackend.hpp"
 #include "fahim_credential_protocol.h"
+#include "fahim_tui_protocol.h"
 
 #include <atomic>
 #include <cstddef>
@@ -60,6 +61,35 @@ private:
     Impl* impl_{nullptr};
 };
 
+
+enum class SecureEnrollmentResult : std::uint32_t {
+    Enrolled = FAHIM_PROVISION_RESULT_OK,
+    NotEnrolled = FAHIM_PROVISION_RESULT_NOT_ENROLLED,
+    AlreadyEnrolled = FAHIM_PROVISION_RESULT_ALREADY_ENROLLED,
+    PinMismatch = FAHIM_PROVISION_RESULT_PIN_MISMATCH,
+    Cancelled = FAHIM_PROVISION_RESULT_CANCELLED,
+    Unavailable = FAHIM_PROVISION_RESULT_UNAVAILABLE,
+    Invalid = FAHIM_PROVISION_RESULT_INVALID
+};
+
+// Starts the Secure World provisioning flow. This method accepts no PIN
+// parameter: the signed provisioner TA obtains both entries through the
+// OP-TEE core Trusted UI PTA and secure board input/display driver.
+class OpteeCredentialProvisioner final {
+public:
+    OpteeCredentialProvisioner() noexcept;
+    ~OpteeCredentialProvisioner();
+
+    OpteeCredentialProvisioner(const OpteeCredentialProvisioner&) = delete;
+    OpteeCredentialProvisioner& operator=(const OpteeCredentialProvisioner&) = delete;
+
+    SecureEnrollmentResult enroll_initial_pin() noexcept;
+
+private:
+    struct Impl;
+    Impl* impl_{nullptr};
+};
+
 class TeeProtectedCredentialBackend final : public ProtectedCredentialBackend {
 public:
     explicit TeeProtectedCredentialBackend(TeeCredentialTransport* transport) noexcept;
@@ -92,6 +122,8 @@ public:
     bool available() const noexcept { return backend_.available(); }
     ProtectedCredentialVerifier& verifier() noexcept { return verifier_; }
     TeeProtectedCredentialBackend& backend() noexcept { return backend_; }
+    OpteeCredentialProvisioner& provisioner() noexcept { return provisioner_; }
+    SecureEnrollmentResult enroll_initial_pin() noexcept { return provisioner_.enroll_initial_pin(); }
     fahim::systemui::LockScreenCore& lock_screen_core() noexcept { return core_; }
 
 private:
@@ -99,6 +131,7 @@ private:
     TeeProtectedCredentialBackend backend_;
     ProtectedCredentialVerifier verifier_;
     fahim::systemui::LockScreenCore core_;
+    OpteeCredentialProvisioner provisioner_{};
 };
 
 }  // namespace fahim::security
