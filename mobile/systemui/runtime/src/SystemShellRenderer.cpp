@@ -396,12 +396,11 @@ SystemShellRenderer::Hit SystemShellRenderer::hit_test(
 
     switch (screen) {
         case SystemScreen::Home:
-            if (in(120, 220, 218, 335)) return Hit::OpenAuthenticator;
-            if (in(329, 380, 438, 520)) return Hit::OpenSettings;
-            if (in(329, 220, 438, 335)) return Hit::OpenAbout;
-            if (in(20, 620, 420, 745)) {
-                return in(20, 620, 220, 745) ? Hit::OpenSettings : Hit::OpenAuthenticator;
-            }
+            if (in(129, 380, 207, 458)) return Hit::OpenAuthenticator;
+            if (in(233, 380, 311, 458)) return Hit::OpenSettings;
+            if (in(337, 380, 415, 458)) return Hit::OpenAbout;
+            if (in(20, 620, 220, 745)) return Hit::OpenSettings;
+            if (in(220, 620, 420, 745)) return Hit::OpenAuthenticator;
             return Hit::None;
         case SystemScreen::ControlCenter:
             if (in(22,205,214,311)) return Hit::ToggleWifi;
