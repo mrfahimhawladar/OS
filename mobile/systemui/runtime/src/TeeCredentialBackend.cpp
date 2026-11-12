@@ -4,6 +4,8 @@
 #include <chrono>
 #include <limits>
 #include <new>
+#include <mutex>
+#include <cstring>
 
 #if defined(FAHIM_ENABLE_OPTEE_CLIENT)
 #include <cstring>
@@ -175,6 +177,96 @@ TeeCredentialResult OpteeCredentialTransport::verify(
 #else
     (void)pin; (void)length; (void)state;
     return TeeCredentialResult::Unavailable;
+#endif
+}
+
+
+#if defined(FAHIM_ENABLE_OPTEE_CLIENT)
+namespace {
+constexpr TEEC_UUID kProvisionerTaUuid = FAHIM_PROVISIONER_TA_UUID;
+
+SecureEnrollmentResult decode_provisioner_response(
+    const fahim_provisioner_response_t& response) noexcept {
+    if (response.protocol_version != FAHIM_TUI_PROTOCOL_VERSION ||
+        response.result > FAHIM_PROVISION_RESULT_INVALID) {
+        return SecureEnrollmentResult::Unavailable;
+    }
+    return static_cast<SecureEnrollmentResult>(response.result);
+}
+}  // namespace
+
+struct OpteeCredentialProvisioner::Impl {
+    mutable std::mutex mutex;
+    mutable TEEC_Context context{};
+    mutable TEEC_Session session{};
+    mutable bool context_initialized{false};
+    mutable bool session_open{false};
+
+    ~Impl() {
+        if (session_open) TEEC_CloseSession(&session);
+        if (context_initialized) TEEC_FinalizeContext(&context);
+    }
+
+    bool ensure_open() const noexcept {
+        if (session_open) return true;
+        if (!context_initialized) {
+            if (TEEC_InitializeContext(nullptr, &context) != TEEC_SUCCESS)
+                return false;
+            context_initialized = true;
+        }
+        std::uint32_t origin = 0u;
+        if (TEEC_OpenSession(&context, &session, &kProvisionerTaUuid,
+                             TEEC_LOGIN_PUBLIC, nullptr, nullptr,
+                             &origin) != TEEC_SUCCESS) {
+            return false;
+        }
+        session_open = true;
+        return true;
+    }
+
+    SecureEnrollmentResult run() const noexcept {
+        std::lock_guard<std::mutex> guard(mutex);
+        if (!ensure_open()) return SecureEnrollmentResult::Unavailable;
+
+        // The REE sends no PIN, no key events and no UI input to this TA.
+        // The Provisioner TA asks the Secure World TUI PTA to collect input.
+        fahim_provisioner_response_t response{};
+        TEEC_Operation operation{};
+        operation.paramTypes = TEEC_PARAM_TYPES(
+            TEEC_MEMREF_TEMP_OUTPUT, TEEC_NONE, TEEC_NONE, TEEC_NONE);
+        operation.params[0].tmpref.buffer = &response;
+        operation.params[0].tmpref.size = sizeof(response);
+        std::uint32_t origin = 0u;
+
+        const TEEC_Result result = TEEC_InvokeCommand(
+            &session, FAHIM_PROVISION_CMD_ENROLL, &operation, &origin);
+        if (result != TEEC_SUCCESS) {
+            std::memset(&response, 0, sizeof(response));
+            return SecureEnrollmentResult::Unavailable;
+        }
+
+        const SecureEnrollmentResult decoded = decode_provisioner_response(response);
+        std::memset(&response, 0, sizeof(response));
+        return decoded;
+    }
+};
+#else
+struct OpteeCredentialProvisioner::Impl {};
+#endif
+
+OpteeCredentialProvisioner::OpteeCredentialProvisioner() noexcept
+    : impl_(new (std::nothrow) Impl{}) {}
+
+OpteeCredentialProvisioner::~OpteeCredentialProvisioner() {
+    delete impl_;
+}
+
+SecureEnrollmentResult OpteeCredentialProvisioner::enroll_initial_pin() noexcept {
+#if defined(FAHIM_ENABLE_OPTEE_CLIENT)
+    if (impl_ == nullptr) return SecureEnrollmentResult::Unavailable;
+    return impl_->run();
+#else
+    return SecureEnrollmentResult::Unavailable;
 #endif
 }
 
