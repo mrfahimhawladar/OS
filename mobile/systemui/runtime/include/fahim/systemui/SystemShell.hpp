@@ -97,6 +97,14 @@ private:
     std::uint32_t width_{0};
     std::uint32_t height_{0};
     std::size_t buffer_pixels_{0};
+    std::uint32_t panel_color_{0xff172335u};
+    std::uint32_t panel_alt_color_{0xff202f43u};
+    std::uint32_t text_color_{0xfff5f7fbu};
+    std::uint32_t muted_color_{0xff9eafc3u};
+    std::uint32_t accent_color_{0xffb6d9ffu};
+    std::uint32_t green_color_{0xff74d6a2u};
+    std::uint32_t orange_color_{0xffffc779u};
+    std::uint32_t red_color_{0xffff8e98u};
 };
 
 class SystemShellController final {
