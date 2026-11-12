@@ -55,6 +55,9 @@ public:
 
     void render(const LockScreenFrameInfo& frame,
                 const LockScreenViewState& state) noexcept;
+    bool register_surface(fahim::ui::Compositor& compositor,
+                          std::uint32_t surface_id,
+                          std::int32_t z_order = 0) const noexcept;
 
 private:
     void clear(std::uint32_t color) noexcept;
@@ -86,7 +89,11 @@ public:
     bool handle_event(const fahim::ui::PointerEvent& event) noexcept;
     void tick() noexcept;
     void lock() noexcept;
-    void render(const LockScreenFrameInfo& frame) noexcept;\n    bool render_to_compositor(const LockScreenFrameInfo& frame,\n                              fahim::ui::Compositor& compositor,\n                              std::uint32_t surface_id,\n                              std::int32_t z_order = 0) noexcept;
+    void render(const LockScreenFrameInfo& frame) noexcept;
+    bool render_to_compositor(const LockScreenFrameInfo& frame,
+                              fahim::ui::Compositor& compositor,
+                              std::uint32_t surface_id,
+                              std::int32_t z_order = 0) noexcept;
 
     bool bouncer_open() const noexcept { return bouncer_open_; }
     bool flashlight_on() const noexcept { return flashlight_on_; }
