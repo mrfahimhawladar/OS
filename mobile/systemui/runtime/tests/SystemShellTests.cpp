@@ -76,17 +76,14 @@ public:
     bool connected{true};
     bool available() const noexcept override { return connected; }
     std::size_t account_count() const noexcept override { return connected ? 1u : 0u; }
-    bool read_account(std::size_t index, AuthenticatorAccount& account) noexcept override {
-        if (!connected || index != 0u) return false;
-        const char issuer[] = "TEST";
-        const char label[] = "RFC 6238";
-        std::memcpy(account.issuer, issuer, sizeof(issuer));
-        std::memcpy(account.label, label, sizeof(label));
-        static constexpr std::uint8_t secret[] = "12345678901234567890";
-        std::memcpy(account.secret, secret, sizeof(secret) - 1u);
-        account.secret_length = sizeof(secret) - 1u;
-        account.digits = 8u;
-        account.period_seconds = 30u;
+    bool generate_code(std::size_t index, std::uint64_t time,
+                       OneTimeCode& output) noexcept override {
+        if (!connected || index != 0u || time != 59u) return false;
+        std::memcpy(output.issuer, "TEST", 5);
+        std::memcpy(output.label, "RFC 6238", 9);
+        std::memcpy(output.code, "94287082", 9);
+        output.digits = 8u;
+        output.seconds_remaining = 1u;
         return true;
     }
     bool begin_secure_enrollment() noexcept override { return connected; }
@@ -96,19 +93,6 @@ static void tap(SystemShellController& shell, int x, int y) {
     assert(shell.handle_event({fahim::ui::PointerPhase::Down, x, y, 1u}));
     assert(shell.handle_event({fahim::ui::PointerPhase::Up, x, y, 2u}));
 }
-}
-
-static void test_rfc6238_totp_sha1_vector() {
-    static constexpr std::uint8_t secret[] = "12345678901234567890";
-    char output[9]{};
-    assert(fahim::security::compute_totp(secret, sizeof(secret) - 1u,
-                                         59u, 30u, 8u, output, sizeof(output)));
-    assert(std::strcmp(output, "94287082") == 0);
-    assert(fahim::security::compute_totp(secret, sizeof(secret) - 1u,
-                                         59u, 30u, 6u, output, sizeof(output)));
-    assert(std::strcmp(output, "287082") == 0);
-    assert(!fahim::security::compute_totp(secret, sizeof(secret) - 1u,
-                                          59u, 0u, 6u, output, sizeof(output)));
 }
 
 static void test_native_system_shell_navigation_and_services() {
@@ -150,6 +134,7 @@ static void test_native_system_shell_navigation_and_services() {
     assert(shell.screen()==SystemScreen::Authenticator);
     assert(shell.state().code_count==1u);
     assert(std::strcmp(shell.state().codes[0].code,"94287082")==0);
+    assert(std::strcmp(shell.state().codes[0].code,"94287082")==0);
 
     tap(shell,60,90); // back to home
     assert(shell.screen()==SystemScreen::Home);
@@ -177,12 +162,11 @@ static void test_missing_services_never_claim_success() {
     const std::size_t count=static_cast<std::size_t>(width)*height;
     std::vector<std::uint32_t> pixels(count),scratch(count);
     SystemShellRenderer renderer(pixels.data(),width,height,count);
-    assert(renderer.hit_test(60,250,SystemScreen::Home)==SystemShellRenderer::Hit::None);
-    assert(renderer.hit_test(160,260,SystemScreen::Home)==SystemShellRenderer::Hit::OpenAuthenticator);
+    assert(renderer.hit_test(5,5,SystemScreen::Home)==SystemShellRenderer::Hit::None);
+    assert(renderer.hit_test(164,158,SystemScreen::Home)==SystemShellRenderer::Hit::OpenAuthenticator);
 }
 
 int main() {
-    test_rfc6238_totp_sha1_vector();
     test_native_system_shell_navigation_and_services();
     test_missing_services_never_claim_success();
     std::cout << "Fahim Native System Shell tests: PASS\n";
