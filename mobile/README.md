@@ -91,9 +91,9 @@ The first ARM64 kernel is small enough for a cross-compilation CI job. A full na
 
 ## 7. Current status
 
-**Verified:** ARM64 entry assembly, bootstrap stack, FDT-based PL011 console initialization, RAM discovery, reserved-range merging/subtraction, and QEMU memory-layout validation.
+**Verified on the QEMU ARM64 reference target:** AArch64 boot/EL1 entry, exception vectors, FDT memory and PL011 discovery, reserved-memory exclusion, physical page allocator, GICv3 initialization, ARM Generic Timer IRQ delivery, EL1 MMU with TTBR1 high-half mapping, independent EL0 address spaces, SVC entry/return, single-core task scheduling, sleep/wakeup, WAITPID, and lower-EL fault isolation.
 
-**Not implemented:** page allocator, MMU, interrupts, timer, scheduler, IPC, filesystem, graphics, lock screen, home screen, applications, and physical-phone drivers.
+**Still not implemented:** general IPC/VFS/storage/network services, a boot-time process loader/session manager, QEMU/phone display and touchscreen drivers, a device-connected compositor, trusted credential enrollment/storage, and physical-phone board support.
 
 The existing root-level x86 files and `preview.html` are a separate learning prototype. They are not Fahim OS Mobile.
 
@@ -104,10 +104,12 @@ The ARM64 kernel baseline has been restored to this repository and its existing 
 The native SystemUI layer now includes:
 
 - A bounds/stride-checked linear framebuffer adapter for XRGB8888 and RGB565.
-- A normalized touch/pointer router which keeps input on the Lock Screen while locked and recognizes swipe-up, camera and flashlight actions.
-- A fixed-capacity alpha compositor with z-order and an explicit session gate. Application surfaces and application input are denied until the native lock state is Unlocked.
+- A raw-touch adapter contract, coordinate calibration/rotation, normalized-event queue and Lock Screen input routing.
+- A native C++ Lock Screen renderer for clock/date/status, notification cards, shortcuts and the PIN bouncer/keypad.
+- A Lock Screen controller that consumes normalized touch events, verifies PIN through an injected credential backend, and sends verifier-approved state to the kernel SVC gate.
+- A fixed-capacity alpha compositor. The native Lock Screen renderer registers its bitmap as a LOCKSCREEN surface; application surfaces are filtered while the kernel session is locked.
 - A protected-credential backend adapter which fails closed when no trusted backend is connected.
-- CMake tests for pixel layout/clipping, touch routing, locked-surface suppression, unlock transition and missing-credential-backend behavior.
+- CMake tests for framebuffer layout/clipping, calibrated touch, native PIN UI/controller, compositor surface registration, kernel bridge mock and missing-backend rejection.
 
 Build and run the SystemUI tests:
 
@@ -115,8 +117,8 @@ Build and run the SystemUI tests:
     cmake --build build/systemui --parallel
     ctest --test-dir build/systemui --output-on-failure
 
-**Still not connected:** QEMU virtio-gpu/simple-framebuffer mapping, physical-phone display controller, touchscreen/virtio-input driver, an OS window/session manager, kernel-enforced process/session lock gate, TEE/secure credential storage and persistent anti-brute-force state. The framebuffer adapter expects a real platform driver to supply a validated mapped framebuffer; the credential adapter expects a trusted service to implement atomic verification and persistent policy. Both are integration contracts, not fake hardware.
+**Still not connected:** QEMU virtio-gpu/ramfb or phone display mapping, QEMU virtio-input or a phone touchscreen driver, a boot-time trusted process/session manager, TEE/hardware-backed credential storage and persistent anti-brute-force state. The framebuffer and touchscreen APIs are ready for platform drivers but do not invent hardware. The credential adapter intentionally fails closed until a real trusted backend exists.
 
-The Lock Screen is **not boot-active** and the repository does not yet contain a flashable smartphone image or ROM.
+The scheduler gate starts locked. The QEMU self-test now creates a synthetic EL0 task assigned the kernel-only LOCKSCREEN role; it invokes SVC 9 to unlock, after which the four test application tasks are allowed to run. This validates the scheduler-level gate and SVC policy, not production PIN verification or boot-time service launch.
 
-The ARM64 scheduler now has a fail-closed session gate: locked at boot, application-role tasks are not scheduled while locked, and only kernel-assigned Lock Screen/Emergency roles may run. The native runtime includes a bridge to the kernel SVC lock-state interface. A trusted process loader must still create the Lock Screen task with the LOCKSCREEN role before normal application processes are enabled.
+The native C++ renderer/controller path is host-tested and connects the touch queue, PIN UI, protected credential interface, kernel-session bridge and compositor surface. It is not yet launched by the boot sequence and no framebuffer or touchscreen device driver is connected. Therefore the Lock Screen is **not yet visibly boot-active** on QEMU or a phone, and no smartphone ROM or flashable image exists.
