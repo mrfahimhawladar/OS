@@ -4,6 +4,7 @@ namespace fahim::security {
 
 fahim::systemui::VerificationResult ProtectedCredentialVerifier::verify_pin(
     const std::uint8_t* pin, std::size_t length) noexcept {
+    last_retry_after_ = std::chrono::seconds(30);
     if (backend_ == nullptr || !backend_->available() ||
         pin == nullptr || length < fahim::systemui::LockScreenCore::kMinPinLength ||
         length > fahim::systemui::LockScreenCore::kMaxPinLength) {
