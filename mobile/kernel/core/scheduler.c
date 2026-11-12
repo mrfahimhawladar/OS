@@ -29,6 +29,7 @@ typedef struct {
     fahim_task_state_t state;
     uint32_t pid;
     uint32_t parent_pid;
+    uint32_t role;
     uint32_t address_space;
     uint64_t user_entry;
     uint64_t user_stack_top;
@@ -47,6 +48,8 @@ static fahim_task_context_t bootstrap_context;
 static int current_task = -1;
 static uint32_t task_count;
 static volatile int scheduler_active;
+/* Fail closed at boot: only trusted lock-screen/emergency tasks may run. */
+static volatile int session_locked = 1;
 static uint64_t scheduler_ticks;
 static uint32_t scheduler_idle_waits;
 static uint32_t scheduler_wakeups;
@@ -83,6 +86,37 @@ static int has_live_tasks(void) {
     return 0;
 }
 
+static int task_role_allowed(uint32_t role) {
+    if (role > (uint32_t)FAHIM_TASK_ROLE_EMERGENCY) {
+        return 0;
+    }
+    return session_locked == 0 ||
+        role == (uint32_t)FAHIM_TASK_ROLE_LOCKSCREEN ||
+        role == (uint32_t)FAHIM_TASK_ROLE_EMERGENCY;
+}
+
+int fahim_scheduler_role_allowed(fahim_task_role_t role) {
+    return task_role_allowed((uint32_t)role);
+}
+
+int fahim_scheduler_session_locked(void) {
+    return session_locked != 0;
+}
+
+int fahim_scheduler_set_session_locked(uint32_t locked) {
+    if (locked > 1u) {
+        return -1;
+    }
+    /* EL0 may change the session only from the kernel-assigned Lock Screen role. */
+    if (scheduler_active &&
+        (current_task < 0 ||
+         tasks[current_task].role != (uint32_t)FAHIM_TASK_ROLE_LOCKSCREEN)) {
+        return -2;
+    }
+    session_locked = (int)locked;
+    return 0;
+}
+
 static int pick_next_task(void) {
     if (task_count == 0u) {
         return -1;
@@ -92,13 +126,15 @@ static int pick_next_task(void) {
     for (uint32_t step = 1u; step <= task_count; ++step) {
         const uint32_t index =
             (uint32_t)((start + (int)step + (int)task_count) % (int)task_count);
-        if (tasks[index].state == FAHIM_TASK_READY) {
+        if (tasks[index].state == FAHIM_TASK_READY &&
+            task_role_allowed(tasks[index].role)) {
             return (int)index;
         }
     }
 
     if (current_task >= 0 &&
-        tasks[current_task].state == FAHIM_TASK_READY) {
+        tasks[current_task].state == FAHIM_TASK_READY &&
+        task_role_allowed(tasks[current_task].role)) {
         return current_task;
     }
     return -1;
@@ -211,9 +247,20 @@ int fahim_scheduler_create_user(uint32_t address_space,
                                 uint64_t entry,
                                 uint64_t user_stack_top,
                                 uint64_t pid) {
+    return fahim_scheduler_create_user_with_role(
+        address_space, entry, user_stack_top, pid,
+        FAHIM_TASK_ROLE_APPLICATION);
+}
+
+int fahim_scheduler_create_user_with_role(uint32_t address_space,
+                                          uint64_t entry,
+                                          uint64_t user_stack_top,
+                                          uint64_t pid,
+                                          fahim_task_role_t role) {
     if (scheduler_active || task_count >= FAHIM_MAX_USER_TASKS ||
         address_space == UINT32_MAX || entry == 0u || user_stack_top == 0u ||
-        pid > UINT32_MAX || find_task_by_pid((uint32_t)pid) >= 0) {
+        pid > UINT32_MAX || find_task_by_pid((uint32_t)pid) >= 0 ||
+        (uint32_t)role > (uint32_t)FAHIM_TASK_ROLE_EMERGENCY) {
         return -1;
     }
 
@@ -227,6 +274,7 @@ int fahim_scheduler_create_user(uint32_t address_space,
     task->address_space = address_space;
     task->user_entry = entry;
     task->user_stack_top = user_stack_top;
+    task->role = (uint32_t)role;
     task->state = FAHIM_TASK_READY;
 
     uintptr_t stack_top =
