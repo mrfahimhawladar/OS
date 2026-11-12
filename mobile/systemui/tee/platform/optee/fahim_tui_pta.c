@@ -90,12 +90,8 @@ static TEE_Result invoke_command(void *session_context __unused,
 				 TEE_Param params[TEE_NUM_PARAMS])
 {
 	struct ts_session *s = ts_get_current_session();
-	struct user_mode_ctx *uctx = NULL;
-
 	if (!caller_is_provisioner() || !s || !is_user_ta_ctx(s->ctx))
 		return TEE_ERROR_ACCESS_DENIED;
-
-	uctx = to_user_mode_ctx(s->ctx);
 
 	switch (command) {
 	case FAHIM_TUI_CMD_BEGIN:
