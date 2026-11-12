@@ -222,6 +222,6 @@ The EL0 SVC ABI now exposes:
 - `x8 = 8`: GET_SESSION_LOCKED; returns 1 when locked, 0 when unlocked.
 - `x8 = 9, x0 = 0|1`: SET_SESSION_LOCKED. Only the currently running kernel-assigned LOCKSCREEN role may change the session gate; application and emergency roles receive an error.
 
-The QEMU kernel self-test verifies the default locked boot policy, app-role denial, trusted-role allowance and explicit lock/unlock transitions. The process scheduler smoke test explicitly unlocks only for its synthetic test tasks and restores the locked state before returning.
+The QEMU scheduler test creates four application-role tasks while the session is locked, plus a synthetic EL0 task assigned the kernel-only LOCKSCREEN role. The scheduler skips the four application tasks, runs the Lock Screen task, and that task invokes SVC 9 to unlock the session. The four application tasks then run. The test checks four blocked task selections, five total task/address-space reaps, and restores the locked state after the synthetic process test. The synthetic payload directly invokes the kernel SVC; it does not verify a real user PIN.
 
 This is a kernel scheduler gate foundation. A trusted task loader/process manager and boot-created Lock Screen task are still required before it can protect a real interactive session.
