@@ -1,5 +1,6 @@
 add_library(fahim_systemui_runtime
     src/FramebufferDisplay.cpp
+    src/InputDevice.cpp
     src/InputRouter.cpp
     src/SessionGate.cpp
     src/Compositor.cpp
