@@ -69,6 +69,8 @@ Source files:
 - The native runtime is not boot-launched as a trusted Lock Screen service. The kernel QEMU role-gate test uses a synthetic LOCKSCREEN-role payload; it does not boot the native renderer or verify a real PIN.
 - The runner's TEEC-enabled tests have no TEE hardware. They prove compile/link and fail-closed behavior, not secure-world invocation.
 
+- Standards boundary: the project-specific TUI core PTA is a secure board-HAL bridge, not yet a complete GlobalPlatform TEE Trusted User Interface Low-level API v1.0.1 (GPD_SPE_055) implementation or Trusted UI PP-Module conformance claim. A production port must implement/map the secure framebuffer/input-event ownership and trusted peripheral controls required by the applicable TUI profile.
+
 ## Kernel and device Lock Screen boundary
 
 Previously verified ARM64 kernel/QEMU run:
