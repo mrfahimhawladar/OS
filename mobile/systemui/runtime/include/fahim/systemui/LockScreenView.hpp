@@ -1,6 +1,7 @@
 #pragma once
 
 #include "fahim/security/KernelSessionControl.hpp"
+#include "fahim/input/InputDevice.hpp"
 #include "fahim/ui/Display.hpp"
 #include "fahim/ui/Compositor.hpp"
 #include "fahim/ui/InputRouter.hpp"
@@ -87,6 +88,8 @@ public:
     // Feed normalized touchscreen events from TouchInputPipeline.
     // Returns false only when the lock-screen view is no longer active.
     bool handle_event(const fahim::ui::PointerEvent& event) noexcept;
+    bool pump_input(fahim::input::TouchInputPipeline& input,
+                    std::size_t max_events = 32u) noexcept;
     void tick() noexcept;
     void lock() noexcept;
     void render(const LockScreenFrameInfo& frame) noexcept;
