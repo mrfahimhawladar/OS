@@ -26,11 +26,11 @@ PINs are numeric, 4–16 digits. Use at least six digits on a production device.
 The TA uses TEE_STORAGE_PRIVATE_RPMB and checks the OP-TEE implementation properties before allowing query, enrollment or verification:
 
 - gpd.tee.trustedStorage.antiRollback.protectionLevel >= 1000 (hardware TEE anti-rollback, normally RPMB with the platform key provisioned);
-- gpd.tee.TAPersistentTime.protectionLevel >= 1000 (TEE-controlled real-time clock, protected from REE software).
+- gpd.tee.systemTime.protectionLevel >= 1000 (TEE-controlled system clock, protected from REE software).
 
 OP-TEE's QEMU vexpress-qemu_armv8a reference target normally does not provide both of these production properties. On that target, the TA deliberately returns UNAVAILABLE; a QEMU TA build is only compile/link verification. Do not lower these checks to make QEMU appear to authenticate.
 
-The platform must provision and enable RPMB, its authentication key, a TEE-controlled secure clock, OP-TEE secure boot/TA signature verification, and a trusted-storage implementation before using this backend for production PINs.
+The platform must provision and enable RPMB, its authentication key, a TEE-controlled system clock, OP-TEE secure boot/TA signature verification, and a trusted-storage implementation before using this backend for production PINs.
 
 ## Enrollment authorization boundary
 
@@ -68,4 +68,4 @@ The option is OFF by default. With it OFF, OpteeCredentialTransport is unavailab
 
 - Host CI tests exercise the C++ transport/backend mapping with a deterministic fake TEE transport. They verify enrollment/duplicate enrollment, PIN acceptance, secure retry deadline propagation across a newly created LockScreenCore, and fail-closed behavior when the transport is unavailable.
 - OP-TEE CI cross-builds the actual Trusted Application against a pinned upstream OP-TEE developer kit and inspects the generated ARM64 ELF and signed TA package.
-- CI does not emulate an RPMB key, TEE hardware anti-rollback counter, secure RTC, secure boot signing key or Trusted UI. Therefore it does not prove that a real device can authenticate or enroll credentials.
+- CI does not emulate an RPMB key, TEE hardware anti-rollback counter, TEE-protected system clock, secure boot signing key or Trusted UI. Therefore it does not prove that a real device can authenticate or enroll credentials.
