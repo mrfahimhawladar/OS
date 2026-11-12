@@ -1,4 +1,5 @@
 #include "fahim/security/CredentialBackend.hpp"
+#include "fahim/security/KernelSessionControl.hpp"
 #include "fahim/ui/Compositor.hpp"
 #include "fahim/ui/InputRouter.hpp"
 #include "fahim/ui/SessionGate.hpp"
@@ -211,6 +212,47 @@ static void test_touchscreen_input_pipeline() {
     assert(!invalid.normalize(device.samples[0], ignored));
 }
 
+
+static bool mock_kernel_session_locked = true;
+
+static std::int64_t mock_kernel_session_transport(
+    std::uint32_t number, std::uint64_t argument) noexcept {
+    if (number == fahim::systemui::KernelSessionControl::kGetSessionLockedSyscall) {
+        return mock_kernel_session_locked ? 1 : 0;
+    }
+    if (number == fahim::systemui::KernelSessionControl::kSetSessionLockedSyscall) {
+        if (argument > 1u) return -22;
+        mock_kernel_session_locked = argument != 0u;
+        return 0;
+    }
+    return -38;
+}
+
+static void test_kernel_session_bridge() {
+    TestProtectedBackend backend;
+    ProtectedCredentialVerifier verifier(&backend);
+    LockScreenCore core(verifier);
+    fahim::systemui::KernelSessionControl control(&mock_kernel_session_transport);
+
+    mock_kernel_session_locked = true;
+    bool locked = false;
+    assert(control.is_locked(locked) == 0);
+    assert(locked);
+    assert(control.synchronize(core) == 0);
+    assert(mock_kernel_session_locked);
+
+    enter_pin(core, "2468");
+    assert(core.submit_pin() == fahim::systemui::SubmitResult::Accepted);
+    assert(control.synchronize(core) == 0);
+    assert(!mock_kernel_session_locked);
+    assert(control.is_locked(locked) == 0);
+    assert(!locked);
+
+    core.lock();
+    assert(control.synchronize(core) == 0);
+    assert(mock_kernel_session_locked);
+}
+
 static void test_missing_credential_backend_fails_closed() {
     ProtectedCredentialVerifier verifier(nullptr);
     std::uint8_t pin[]{'2', '4', '6', '8'};
@@ -223,6 +265,7 @@ int main() {
     test_input_router();
     test_touchscreen_input_pipeline();
     test_gate_and_compositor();
+    test_kernel_session_bridge();
     test_missing_credential_backend_fails_closed();
     std::cout << "Fahim SystemUI runtime tests: PASS\n";
     return 0;
