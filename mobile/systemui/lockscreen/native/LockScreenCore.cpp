@@ -60,6 +60,14 @@ SubmitResult LockScreenCore::submit_pin() noexcept {
             lockout_level_ = 0;
             state_ = LockState::Unlocked;
             return SubmitResult::Accepted;
+        case VerificationResult::LockedOut: {
+            auto retry = verifier_.retry_after();
+            if (retry <= std::chrono::milliseconds::zero()) retry = lockout_duration();
+            lockout_until_ = now_() + retry;
+            ++lockout_level_;
+            state_ = LockState::Lockout;
+            return SubmitResult::LockedOut;
+        }
         case VerificationResult::TemporarilyUnavailable:
             state_ = LockState::Locked;
             return SubmitResult::BackendUnavailable;
