@@ -1,0 +1,61 @@
+name: Android native Lock Screen preview APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "mobile/systemui/android-preview/**"
+      - "mobile/systemui/runtime/src/LockScreenRenderer.cpp"
+      - "mobile/systemui/runtime/include/fahim/systemui/LockScreenView.hpp"
+      - "mobile/systemui/runtime/include/fahim/ui/Compositor.hpp"
+      - "mobile/systemui/runtime/src/Compositor.cpp"
+      - "mobile/systemui/runtime/src/SessionGate.cpp"
+      - ".github/workflows/android-lockscreen-preview.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fahim-android-lockscreen-preview
+  cancel-in-progress: true
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+
+      - name: Install Android SDK and NDK packages
+        run: |
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "cmake;3.22.1" "ndk;27.2.12479018"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Build installable Android APK
+        run: |
+          gradle --no-daemon --stacktrace -p mobile/systemui/android-preview assembleDebug
+          test -s mobile/systemui/android-preview/app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging mobile/systemui/android-preview/app/build/outputs/apk/debug/app-debug.apk | head -n 5
+
+      - name: Upload Android preview APK
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: fahim-os-native-lockscreen-android-preview
+          path: mobile/systemui/android-preview/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
