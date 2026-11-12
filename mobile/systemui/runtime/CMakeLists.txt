@@ -11,8 +11,7 @@ add_library(fahim_systemui_runtime
 )
 
 target_include_directories(fahim_systemui_runtime
-    PUBLIC include
-    PRIVATE ../lockscreen/native
+    PUBLIC include ../lockscreen/native
 )
 target_compile_features(fahim_systemui_runtime PUBLIC cxx_std_17)
 target_compile_options(fahim_systemui_runtime PRIVATE -Wall -Wextra -Wpedantic -Werror)
