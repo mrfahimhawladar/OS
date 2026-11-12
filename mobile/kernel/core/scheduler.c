@@ -56,6 +56,7 @@ static uint32_t scheduler_wakeups;
 static uint32_t scheduler_user_faults;
 static uint32_t scheduler_reaps;
 static uint32_t scheduler_waitpid_successes;
+static uint32_t scheduler_locked_task_skips;
 
 extern void fahim_context_switch(fahim_task_context_t *previous,
                                  const fahim_task_context_t *next);
@@ -126,16 +127,21 @@ static int pick_next_task(void) {
     for (uint32_t step = 1u; step <= task_count; ++step) {
         const uint32_t index =
             (uint32_t)((start + (int)step + (int)task_count) % (int)task_count);
-        if (tasks[index].state == FAHIM_TASK_READY &&
-            task_role_allowed(tasks[index].role)) {
+        if (tasks[index].state == FAHIM_TASK_READY) {
+            if (!task_role_allowed(tasks[index].role)) {
+                scheduler_locked_task_skips++;
+                continue;
+            }
             return (int)index;
         }
     }
 
-    if (current_task >= 0 &&
-        tasks[current_task].state == FAHIM_TASK_READY &&
-        task_role_allowed(tasks[current_task].role)) {
-        return current_task;
+    if (current_task >= 0 && tasks[current_task].state == FAHIM_TASK_READY) {
+        if (!task_role_allowed(tasks[current_task].role)) {
+            scheduler_locked_task_skips++;
+        } else {
+            return current_task;
+        }
     }
     return -1;
 }
@@ -334,6 +340,7 @@ void fahim_scheduler_start(void) {
     scheduler_user_faults = 0u;
     scheduler_reaps = 0u;
     scheduler_waitpid_successes = 0u;
+    scheduler_locked_task_skips = 0u;
     scheduler_active = 1;
 
     const int first = pick_next_task();
@@ -546,6 +553,10 @@ uint32_t fahim_scheduler_waitpid_success_count(void) {
     return scheduler_waitpid_successes;
 }
 
+uint32_t fahim_scheduler_locked_task_skip_count(void) {
+    return scheduler_locked_task_skips;
+}
+
 void fahim_scheduler_fault_current(void) {
     if (!scheduler_active || current_task < 0) {
         scheduler_halt();
@@ -573,4 +584,5 @@ void fahim_scheduler_reset(void) {
     scheduler_user_faults = 0u;
     scheduler_reaps = 0u;
     scheduler_waitpid_successes = 0u;
+    scheduler_locked_task_skips = 0u;
 }
