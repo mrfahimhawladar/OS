@@ -248,6 +248,6 @@ std::chrono::milliseconds TeeProtectedCredentialBackend::lockout_remaining() con
 }
 
 TeeCredentialService::TeeCredentialService() noexcept
-    : transport_(), backend_(&transport_), verifier_(&backend_) {}
+    : transport_(), backend_(&transport_), verifier_(&backend_), core_(verifier_) {}
 
 }  // namespace fahim::security
