@@ -427,3 +427,5 @@ SystemShellRenderer::Hit SystemShellRenderer::hit_test(
     }
     return Hit::None;
 }
+
+}  // namespace fahim::systemui
