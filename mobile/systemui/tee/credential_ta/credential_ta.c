@@ -9,7 +9,7 @@
 #define CREDENTIAL_RECORD_VERSION 1u
 #define CREDENTIAL_FAILURE_LIMIT 5u
 #define CREDENTIAL_LOCKOUT_BASE_MS 30000ull
-#define CREDENTIAL_LOCKOUT_MAX_MS 300000ull
+#define CREDENTIAL_LOCKOUT_MAX_MS 3600000ull
 
 static const uint8_t credential_record_id[] = "fahim-credential-v1";
 static const uint8_t credential_pepper_id[] = "fahim-credential-pepper-v1";
@@ -50,6 +50,36 @@ static void set_response(TEE_Param params[4], uint32_t result,
     TEE_MemMove(params[1].memref.buffer, &response, sizeof(response));
     params[1].memref.size = sizeof(response);
     secure_clear(&response, sizeof(response));
+}
+
+
+/*
+ * PIN enrollment is not exposed to a normal-world/public client. It must be
+ * initiated by a separately signed Secure World provisioning TA which owns
+ * the trusted setup UI/physical-presence path. That TA's UUID is deliberately
+ * pinned here; a normal Android/Linux process cannot claim TEE_LOGIN_TRUSTED_APP.
+ */
+static const TEE_UUID credential_provisioner_uuid = {
+    0x28e3b2d4, 0x4a20, 0x4f91,
+    { 0x9a, 0x11, 0x46, 0x41, 0x48, 0x49, 0x4d, 0x50 }
+};
+
+static bool is_trusted_provisioner(void)
+{
+    TEE_Identity identity;
+    TEE_Result result = TEE_GetPropertyAsIdentity(
+        TEE_PROPSET_CURRENT_CLIENT, "gpd.client.identity", &identity);
+
+    if (result != TEE_SUCCESS)
+        return false;
+
+    return identity.login == TEE_LOGIN_TRUSTED_APP &&
+        identity.uuid.timeLow == credential_provisioner_uuid.timeLow &&
+        identity.uuid.timeMid == credential_provisioner_uuid.timeMid &&
+        identity.uuid.timeHiAndVersion == credential_provisioner_uuid.timeHiAndVersion &&
+        TEE_MemCompare(identity.uuid.clockSeqAndNode,
+                       credential_provisioner_uuid.clockSeqAndNode,
+                       sizeof(credential_provisioner_uuid.clockSeqAndNode)) == 0;
 }
 
 static TEE_Result verify_secure_platform(void)
@@ -286,7 +316,7 @@ static TEE_Result create_record(const credential_record_t *record)
 static uint64_t next_lockout_duration_ms(uint32_t level)
 {
     uint64_t duration = CREDENTIAL_LOCKOUT_BASE_MS;
-    uint32_t shift = level > 4u ? 4u : level;
+    uint32_t shift = level > 7u ? 7u : level;
 
     duration <<= shift;
     if (duration > CREDENTIAL_LOCKOUT_MAX_MS)
@@ -440,6 +470,7 @@ static TEE_Result verify_credential(TEE_Param params[4])
     TEE_ObjectHandle handle = TEE_HANDLE_NULL;
     size_t length = params[0].memref.size;
     uint64_t now_ms = 0u;
+    uint64_t retry_after = 0u;
     size_t i;
     int matches = 0;
     TEE_Result result;
@@ -457,7 +488,6 @@ static TEE_Result verify_credential(TEE_Param params[4])
     TEE_MemMove(pin, params[0].memref.buffer, length);
     for (i = 0u; i < length; ++i) {
         if (pin[i] < (uint8_t)'0' || pin[i] > (uint8_t)'9') {
-            result = TEE_ERROR_BAD_PARAMETERS;
             goto invalid;
         }
     }
@@ -526,6 +556,7 @@ static TEE_Result verify_credential(TEE_Param params[4])
     goto done;
 
 invalid:
+    result = TEE_SUCCESS;
     set_response(params, FAHIM_CRED_RESULT_INVALID, 0u, 0u, 0u);
     goto cleanup;
 
@@ -601,6 +632,15 @@ TEE_Result TA_InvokeCommandEntryPoint(void *session_context,
             params[0] = adapted[1];
             return TEE_SUCCESS;
         }
+    }
+
+    if (command_id == FAHIM_CRED_CMD_ENROLL && !is_trusted_provisioner()) {
+        TEE_Param adapted[4];
+        TEE_MemFill(adapted, 0, sizeof(adapted));
+        adapted[1] = params[1];
+        set_response(adapted, FAHIM_CRED_RESULT_UNAVAILABLE, 0u, 0u, 0u);
+        params[1] = adapted[1];
+        return TEE_SUCCESS;
     }
 
     if (command_id == FAHIM_CRED_CMD_ENROLL ||
