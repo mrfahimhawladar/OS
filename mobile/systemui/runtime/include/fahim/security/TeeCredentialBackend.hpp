@@ -3,6 +3,7 @@
 #include "fahim/security/CredentialBackend.hpp"
 #include "fahim_credential_protocol.h"
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 
@@ -74,7 +75,7 @@ public:
 
 private:
     TeeCredentialTransport* transport_{nullptr};
-    std::uint64_t last_retry_after_ms_{0};
+    std::atomic<std::uint64_t> last_retry_after_ms_{0};
 };
 
 }  // namespace fahim::security
