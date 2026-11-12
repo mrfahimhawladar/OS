@@ -95,6 +95,10 @@ struct OpteeCredentialTransport::Impl {
                 return TeeCredentialResult::Unavailable;
             }
             input_allocated = true;
+            if (input_memory.buffer == nullptr) {
+                TEEC_ReleaseSharedMemory(&input_memory);
+                return TeeCredentialResult::Unavailable;
+            }
             std::memcpy(input_memory.buffer, pin, length);
             operation.paramTypes = TEEC_PARAM_TYPES(
                 TEEC_MEMREF_PARTIAL_INPUT, TEEC_MEMREF_TEMP_OUTPUT,
@@ -212,14 +216,14 @@ TeeCredentialResult TeeProtectedCredentialBackend::enroll_pin(
 fahim::systemui::VerificationResult
 TeeProtectedCredentialBackend::verify_pin_and_update_policy(
     const std::uint8_t* pin, std::size_t length) noexcept {
-    last_retry_after_ms_ = 0u;
+    last_retry_after_ms_.store(0u, std::memory_order_relaxed);
     if (transport_ == nullptr || !transport_->ready() || pin == nullptr ||
         length < FAHIM_CREDENTIAL_PIN_MIN || length > FAHIM_CREDENTIAL_PIN_MAX) {
         return fahim::systemui::VerificationResult::TemporarilyUnavailable;
     }
     TeeCredentialState state{};
     const TeeCredentialResult result = transport_->verify(pin, length, state);
-    last_retry_after_ms_ = state.retry_after_ms;
+    last_retry_after_ms_.store(state.retry_after_ms, std::memory_order_relaxed);
     switch (result) {
         case TeeCredentialResult::Ok:
             return fahim::systemui::VerificationResult::Accepted;
@@ -239,7 +243,7 @@ TeeProtectedCredentialBackend::verify_pin_and_update_policy(
 std::chrono::milliseconds TeeProtectedCredentialBackend::lockout_remaining() const noexcept {
     const auto maximum = static_cast<std::uint64_t>(
         std::numeric_limits<std::int64_t>::max());
-    const auto bounded = std::min(last_retry_after_ms_, maximum);
+    const auto bounded = std::min(last_retry_after_ms_.load(std::memory_order_relaxed), maximum);
     return std::chrono::milliseconds(static_cast<std::int64_t>(bounded));
 }
 
