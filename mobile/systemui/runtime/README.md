@@ -11,7 +11,7 @@ This is a device-independent native runtime foundation for the lock screen. It d
 - `runtime/src/InputRouter.cpp`: normalized pointer/touch event router. While locked, events are exclusively routed to Lock Screen; it recognizes upward swipe, camera and flashlight shortcut taps.
 - `runtime/src/Compositor.cpp`: fixed-capacity alpha compositor with z-order and an OS session gate. Application surfaces are omitted whenever the lock state is not Unlocked.
 - `runtime/src/SessionGate.cpp`: fail-closed presentation/input policy. Only the Lock Screen, public system overlays and explicitly activated emergency dialer may be presented while locked.
-- `runtime/src/CredentialBackend.cpp`: adapter to a trusted protected-credential service. It returns unavailable when there is no backend; it never accepts a preview PIN or stores credentials itself.
+- `runtime/src/CredentialBackend.cpp` and `runtime/src/TeeCredentialBackend.cpp`: trusted credential adapter plus optional GlobalPlatform TEEC transport. It never accepts a preview PIN or stores credentials itself.
 - `runtime/src/KernelSessionControl.cpp`: AArch64 SVC bridge from verifier-approved LockScreenCore state to the kernel's task-role session gate.
 - `lockscreen/native/`: bounded PIN state machine and escalating in-memory lockout.
 
@@ -55,7 +55,7 @@ This gives the native software path and tested UI/controller integration. It doe
 
 ## Secure credential backend
 
-The native runtime now includes TeeCredentialBackend and a GlobalPlatform TEEC client transport. The matching OP-TEE Trusted Application lives in mobile/systemui/tee/credential_ta/. PIN derivation and verification run in Secure World using a per-device TEE-held HMAC-SHA256 pepper plus a random per-enrollment salt; the PIN itself is not persisted. The TA stores its verifier and failed-attempt/secure-deadline state in private RPMB Trusted Storage and refuses authentication unless the TEE reports hardware anti-rollback level 1000 and TEE-protected system-time level 1000. It fails closed on missing hardware properties or any storage/clock failure.
+The native runtime includes TeeCredentialBackend, TeeCredentialService and a GlobalPlatform TEEC client transport. A Lock Screen process constructs `TeeCredentialService` first, then constructs `LockScreenCore` with `service.verifier()`; the service owns the transport and backend for the verifier's lifetime. The matching OP-TEE Trusted Application lives in mobile/systemui/tee/credential_ta/. PIN derivation and verification run in Secure World using a per-device TEE-held HMAC-SHA256 pepper plus a random per-enrollment salt; the PIN itself is not persisted. The TA stores its verifier and failed-attempt/secure-deadline state in private RPMB Trusted Storage and refuses authentication unless the TEE reports hardware anti-rollback level 1000 and TEE-protected system-time level 1000. It fails closed on missing hardware properties or any storage/clock failure.
 
 The FAHIM_ENABLE_OPTEE_CLIENT CMake option is OFF by default. Without an installed OP-TEE client library, the transport is unavailable and PIN verification returns unavailable rather than accepting a software fallback. The native CI uses a fake transport for adapter behavior tests; the separate OP-TEE workflow compiles the real TA against a pinned upstream developer kit.
 
