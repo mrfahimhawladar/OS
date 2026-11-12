@@ -55,7 +55,7 @@ static void test_framebuffer() {
                           PixelFormat::XRGB8888});
     assert(display.valid());
     assert(display.width() == 4u && display.height() == 3u);
-    assert(display.draw_pixel(1, 1, Color{255, 0, 0, 255}));
+    assert(display.draw_pixel(3, 2, Color{255, 0, 0, 255}));
     assert(!display.draw_pixel(-1, 1, Color{0, 0, 0, 255}));
     assert(display.fill_rect(Rect{-1, 0, 3u, 2u}, Color{0, 255, 0, 255}));
     assert(display.present());
@@ -64,7 +64,7 @@ static void test_framebuffer() {
     assert(pixels[0] == 0xff00ff00u);
     assert(pixels[1] == 0xff00ff00u);
     assert(pixels[5] == 0xff00ff00u);
-    assert(pixels[6] == 0xffff0000u);
+    assert(pixels[11] == 0xffff0000u);
 
     FramebufferDisplay invalid(
         FramebufferConfig{memory.data(), memory.size(), 10u, 10u, 4u,
@@ -147,7 +147,7 @@ static void test_gate_and_compositor() {
 
     auto* rendered = reinterpret_cast<const std::uint32_t*>(framebuffer.data());
     // The app's blue surface is excluded. The public green overlay blends over red.
-    assert(rendered[0] == 0xff807f00u);
+    assert(rendered[0] == 0xff7f8000u);
 
     enter_pin(core, "2468");
     assert(core.submit_pin() == fahim::systemui::SubmitResult::Accepted);
