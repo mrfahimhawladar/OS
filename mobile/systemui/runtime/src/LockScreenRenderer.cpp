@@ -226,6 +226,17 @@ PinHit LockScreenRenderer::hit_test_pin(std::int32_t x,
     return PinHit::None;
 }
 
+bool LockScreenRenderer::register_surface(
+    fahim::ui::Compositor& compositor, std::uint32_t surface_id,
+    std::int32_t z_order) const noexcept {
+    if (!valid() || surface_id == 0u) return false;
+    const fahim::ui::Surface surface{
+        surface_id, pixels_, width_, height_, width_,
+        0, 0, z_order, fahim::ui::SurfaceRole::LockScreen, true
+    };
+    return compositor.upsert_surface(surface);
+}
+
 void LockScreenRenderer::render(const LockScreenFrameInfo& frame,
                                 const LockScreenViewState& state) noexcept {
     if (!valid()) return;
