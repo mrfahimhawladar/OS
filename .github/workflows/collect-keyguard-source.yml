@@ -34,10 +34,11 @@ jobs:
             local project="$1"
             local subpath="$2"
             local destination="$3"
-            local url="https://android.googlesource.com/\${project}/+archive/\${REF}"
+            local url="https://android.googlesource.com/"
+            url+="$project/+archive/$REF"
 
             if [[ -n "$subpath" ]]; then
-              url+="/\${subpath}"
+              url+="/$subpath"
             fi
             url+=".tar.gz"
 
