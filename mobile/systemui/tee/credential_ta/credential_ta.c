@@ -107,7 +107,7 @@ static TEE_Result verify_secure_platform(void)
         TEE_PROPSET_TEE_IMPLEMENTATION,
         "gpd.tee.systemTime.protectionLevel",
         &system_time_level);
-    if (result != TEE_SUCCESS || persistent_time_level < 1000u)
+    if (result != TEE_SUCCESS || system_time_level < 1000u)
         return TEE_ERROR_NOT_SUPPORTED;
 
     return TEE_SUCCESS;
@@ -116,7 +116,6 @@ static TEE_Result verify_secure_platform(void)
 static TEE_Result get_secure_time_ms(uint64_t *time_ms)
 {
     TEE_Time time;
-    TEE_Result result;
 
     if (time_ms == NULL)
         return TEE_ERROR_BAD_PARAMETERS;
