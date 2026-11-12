@@ -9,7 +9,6 @@ add_library(fahim_systemui_runtime
     src/KernelSessionControl.cpp
     src/LockScreenRenderer.cpp
     src/LockScreenController.cpp
-    src/Authenticator.cpp
     src/SystemShellRenderer.cpp
     src/SystemShellController.cpp
 )
