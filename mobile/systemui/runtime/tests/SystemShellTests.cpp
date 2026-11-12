@@ -146,7 +146,7 @@ static void test_native_system_shell_navigation_and_services() {
     assert(shell.render());
     assert(compositor.surface_count()==1u);
 
-    tap(shell,160,420); // Authenticator home tile
+    tap(shell,300,285); // Authenticator home tile
     assert(shell.screen()==SystemScreen::Authenticator);
     assert(shell.state().code_count==1u);
     assert(std::strcmp(shell.state().codes[0].code,"94287082")==0);
