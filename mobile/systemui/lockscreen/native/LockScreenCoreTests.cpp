@@ -16,10 +16,15 @@ using fahim::systemui::VerificationResult;
 class TestVerifier final : public CredentialVerifier {
 public:
     VerificationResult next_result{VerificationResult::Rejected};
+    std::chrono::milliseconds retry_after_value{30s};
+    std::chrono::milliseconds retry_after() const noexcept override {
+        return retry_after_value;
+    }
     VerificationResult verify_pin(const std::uint8_t* pin,
                                   std::size_t length) noexcept override {
         const bool matches = length == 6 && std::memcmp(pin, "246810", 6) == 0;
-        if (next_result == VerificationResult::TemporarilyUnavailable) return next_result;
+        if (next_result == VerificationResult::TemporarilyUnavailable ||
+            next_result == VerificationResult::LockedOut) return next_result;
         return matches ? VerificationResult::Accepted : next_result;
     }
 };
@@ -67,6 +72,14 @@ int main() {
     assert(core.lockout_remaining() == 60s);
 
     now += 60s;
+    core.tick();
+    core.lock();
+    verifier.next_result = VerificationResult::LockedOut;
+    verifier.retry_after_value = 120s;
+    enter_pin(core, "1234");
+    assert(core.submit_pin() == SubmitResult::LockedOut);
+    assert(core.lockout_remaining() == 120s);
+    now += 120s;
     core.tick();
     core.lock();
     verifier.next_result = VerificationResult::TemporarilyUnavailable;
