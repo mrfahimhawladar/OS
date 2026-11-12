@@ -230,4 +230,4 @@ This is a kernel scheduler gate foundation. A trusted task loader/process manage
 
 The scheduler task-role enum now includes FAHIM_TASK_ROLE_SYSTEM_SHELL. The role is not runnable while the session lock is active; after the trusted Lock Screen opens the session gate, System Shell tasks may be scheduled. The QEMU lock-gate self-test asserts that SYSTEM_SHELL is denied while locked and allowed after unlock.
 
-This is a role/policy integration only. No boot process manager or ELF loader yet creates a persistent System Shell task; the current QEMU test uses a synthetic Lock Screen payload for the gate transition. A boot-created shell process, display driver and touch driver remain required for a visible QEMU/phone desktop.
+This is a role/policy integration only. No boot process manager or ELF loader yet creates a persistent System Shell task; the current QEMU test uses a synthetic Lock Screen payload for the gate transition. A boot-created shell process plus QEMU virtual display and input drivers remain required for a visible graphical QEMU desktop.
