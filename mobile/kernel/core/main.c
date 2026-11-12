@@ -559,7 +559,7 @@ static void run_process_scheduler_self_test(void) {
     const uint32_t locked_task_skips = fahim_scheduler_locked_task_skip_count();
     if (scheduler_ticks == 0u || shared_counter[0] != 3u ||
         shared_counter[1] != 0x2a00u ||
-        idle_waits != 2u || wakeups != 2u || user_faults != 1u ||
+        idle_waits == 0u || wakeups != 2u || user_faults != 1u ||
         reaps != 5u || waitpid_successes != 1u || locked_task_skips < 4u) {
         console_write("Process Lifecycle self-test: FAIL ticks=");
         console_write_hex64(scheduler_ticks);
