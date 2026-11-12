@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <chrono>
 
 namespace fahim::security {
 
@@ -16,6 +17,9 @@ public:
     virtual bool available() const noexcept = 0;
     virtual fahim::systemui::VerificationResult verify_pin_and_update_policy(
         const std::uint8_t* pin, std::size_t length) noexcept = 0;
+    virtual std::chrono::milliseconds lockout_remaining() const noexcept {
+        return std::chrono::seconds(30);
+    }
 };
 
 class ProtectedCredentialVerifier final : public fahim::systemui::CredentialVerifier {
@@ -26,8 +30,13 @@ public:
     fahim::systemui::VerificationResult verify_pin(
         const std::uint8_t* pin, std::size_t length) noexcept override;
 
+    std::chrono::milliseconds retry_after() const noexcept override {
+        return last_retry_after_;
+    }
+
 private:
     ProtectedCredentialBackend* backend_{nullptr};
+    std::chrono::milliseconds last_retry_after_{std::chrono::seconds(30)};
 };
 
 }  // namespace fahim::security
