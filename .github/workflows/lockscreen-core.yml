@@ -31,11 +31,24 @@ jobs:
       - name: Check out source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Configure SystemUI
+      - name: Install OP-TEE Client development package
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y optee-client-dev
+
+      - name: Configure SystemUI (fail-closed transport stub)
         run: cmake -S mobile/systemui -B build/systemui
 
-      - name: Build SystemUI components
-        run: cmake --build build/systemui --parallel 2
+      - name: Configure SystemUI (real GlobalPlatform TEEC client)
+        run: cmake -S mobile/systemui -B build/systemui-optee -DFAHIM_ENABLE_OPTEE_CLIENT=ON
 
-      - name: Run SystemUI tests
+      - name: Build SystemUI components
+        run: |
+          cmake --build build/systemui --parallel 2
+          cmake --build build/systemui-optee --parallel 2
+
+      - name: Run SystemUI tests (fail-closed stub)
         run: ctest --test-dir build/systemui --output-on-failure
+
+      - name: Run SystemUI tests (TEEC client branch)
+        run: ctest --test-dir build/systemui-optee --output-on-failure
