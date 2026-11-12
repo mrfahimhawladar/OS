@@ -188,7 +188,6 @@ void SystemShellController::activate(SystemShellRenderer::Hit hit) noexcept {
 void SystemShellController::tick() noexcept {
     if (lock_core_.state() != LockState::Unlocked) return;
     refresh();
-    if (state_.screen == SystemScreen::Authenticator) refresh_authenticator();
     (void)render();
 }
 
