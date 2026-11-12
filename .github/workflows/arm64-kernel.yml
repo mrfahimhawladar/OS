@@ -99,7 +99,8 @@ jobs:
           grep -q "EL0 WRITE: rejected invalid user range" qemu-arm64.log
           grep -q "EL0 WAITPID: rejected non-writable status pointer" qemu-arm64.log
           grep -q "Process Scheduler timer ticks:" qemu-arm64.log
-          grep -q "idle waits: 0x0000000000000002 wakeups: 0x0000000000000002 user faults: 0x0000000000000001 waitpid: 0x0000000000000001 reaps: 0x0000000000000004" qemu-arm64.log
+          grep -q "idle waits: 0x0000000000000002 wakeups: 0x0000000000000002 user faults: 0x0000000000000001 waitpid: 0x0000000000000001 reaps: 0x0000000000000005 locked app tasks skipped before Lock Screen unlock: 0x0000000000000004" qemu-arm64.log
+          grep -q "Kernel Lock Gate integration test: PASS (locked boot, app tasks skipped, trusted EL0 Lock Screen used SVC 9 to unlock, application tasks resumed)" qemu-arm64.log
           grep -q "Process Lifecycle self-test: PASS (timer preemption, waitpid, child zombie/reap, exit status, timed sleep, idle WFI, EL0 fault isolation, address-space cleanup)" qemu-arm64.log
           grep -q "RAM region base: 0x0000000040000000 size: 0x0000000020000000 bytes" qemu-arm64.log
           grep -q "Reserved region base: 0x0000000040000000" qemu-arm64.log
