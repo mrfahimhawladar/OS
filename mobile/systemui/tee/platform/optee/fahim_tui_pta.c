@@ -145,7 +145,7 @@ static TEE_Result invoke_command(void *session_context __unused,
 			}
 		}
 
-		res = copy_to_user(uctx, params[1].memref.buffer, pin, length);
+		res = copy_to_user(params[1].memref.buffer, pin, length);
 		if (res == TEE_SUCCESS)
 			params[1].memref.size = length;
 out:
