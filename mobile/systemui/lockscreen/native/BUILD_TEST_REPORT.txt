@@ -94,3 +94,39 @@ Therefore: the Provisioner TA and Trusted UI PTA now exist and compile into thei
 - Artifact: fahim-os-native-lockscreen-render (ID 13945437868).
 - Frames: native-lockscreen.png and native-pin-bouncer.png, each 440x900.
 - These are host-rendered outputs from the actual LockScreenRenderer.cpp code. They are not captured from a booted device or QEMU display and do not represent a running OS.
+
+## Native System Shell verification (feature/native-system-shell)
+
+Latest successful native SystemUI run:
+- https://github.com/mrfahimhawladar/OS/actions/runs/43229043708
+- Native SystemUI CMake build: PASS.
+- CTest: 3/3 passed (lockscreen_core_tests, systemui_runtime_tests, system_shell_tests).
+- Native C++ lock-screen renderer screenshot generation and artifact upload also passed (these are renderer output checks, not booted-device screenshots).
+
+System Shell coverage:
+- Home, Control Center, Settings, Authenticator and About native surfaces.
+- Touch navigation through the existing normalized input pipeline.
+- Native compositor surface registration; shell surface is denied by the existing session gate while locked.
+- Wi-Fi control and theme setting are dispatched only through SystemPlatformServices; the test uses a mock provider, while no production radio/brightness provider is connected.
+- Authenticator obtains labels and short-lived TOTP codes only through AuthenticatorVault. TOTP seeds/shared secrets are not exposed to the Normal World/SystemUI. The test uses a mock secure-vault response; no production authenticator vault TA is connected.
+- Settings Lock Device action returns the native LockScreenCore to Locked and removes the shell surface.
+- Light/dark rendering palette and battery/network state use the provided platform status values; unavailable values are shown as unavailable.
+
+Latest ARM64 QEMU kernel run:
+- https://github.com/mrfahimhawladar/OS/actions/runs/43229043314
+- Kernel build, ELF inspection and QEMU boot/gate/exception tests: PASS.
+- QEMU verifies SYSTEM_SHELL role is blocked while locked and allowed when the kernel session gate is unlocked. It does not launch the native C++ SystemShell as a persistent process.
+
+Current PR:
+- https://github.com/mrfahimhawladar/OS/pull/10
+- Branch: feature/native-system-shell (draft PR; not merged into main).
+
+Not yet implemented/verified:
+- General ELF loader/process manager and boot-time creation of persistent LockScreen and SystemShell processes.
+- QEMU virtio-gpu/ramfb or POCO display controller driver and framebuffer binding.
+- QEMU virtio-input or physical touchscreen driver.
+- Production Wi-Fi/Bluetooth/airplane/flashlight/brightness/theme service providers.
+- OP-TEE secure TOTP vault TA, secure OTP account enrollment/storage, and protected time source.
+- Device image/ROM integration and physical-device boot testing.
+
+Therefore these are native C++ OS runtime components with host CI and kernel-role QEMU verification; the complete graphical System Shell is not yet boot-active on the QEMU monitor or POCO phone.
