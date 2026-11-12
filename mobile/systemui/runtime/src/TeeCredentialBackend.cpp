@@ -4,13 +4,10 @@
 #include <chrono>
 #include <limits>
 #include <new>
-#include <mutex>
 #include <cstring>
 
 #if defined(FAHIM_ENABLE_OPTEE_CLIENT)
-#include <cstring>
 #include <mutex>
-#include <new>
 #include <tee_client_api.h>
 #endif
 
