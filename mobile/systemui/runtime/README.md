@@ -60,3 +60,11 @@ The native runtime includes TeeCredentialBackend, TeeCredentialService and a Glo
 The FAHIM_ENABLE_OPTEE_CLIENT CMake option is OFF by default. Without an installed OP-TEE client library, the transport is unavailable and PIN verification returns unavailable rather than accepting a software fallback. The native CI uses a fake transport for adapter behavior tests; the separate OP-TEE workflow compiles the real TA against a pinned upstream developer kit.
 
 Enrollment is intentionally more restricted than verification. The TA accepts enrollment only from a separately signed Secure-World provisioning TA with a pinned UUID. A normal-world TEEC_LOGIN_PUBLIC caller cannot enroll or replace a PIN. That provisioning TA and its Trusted UI/physical-presence path have not yet been implemented, so first-time production enrollment is not yet available. See mobile/systemui/tee/README.md for required platform setup and exact verification boundaries.
+
+## Native renderer screenshots
+
+The workflow `.github/workflows/lockscreen-core.yml` builds `native_lockscreen_snapshot` and runs it against the real `LockScreenRenderer.cpp` implementation. It emits 440x900 PNG snapshots for:
+- `native-lockscreen.png`: renderer's locked state.
+- `native-pin-bouncer.png`: renderer's PIN-entry UI state (zero digits entered).
+
+These are host-rendered framebuffer outputs from the native C++ code, not the HTML preview. They are not screenshots captured from a booted QEMU/phone display, and they do not exercise real hardware or credential verification.
