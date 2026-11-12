@@ -3,8 +3,8 @@ Date: 2026-11-12
 
 ## Native SystemUI CI
 
-Successful run:
-- https://github.com/mrfahimhawladar/OS/actions/runs/43215796843
+Latest successful run after the owning TeeCredentialService/LockScreenCore wiring:
+- https://github.com/mrfahimhawladar/OS/actions/runs/43216056372
 
 Results:
 - CMake configure and build: PASS with OP-TEE client disabled and enabled.
@@ -15,17 +15,18 @@ Results:
 
 ## OP-TEE Secure World Trusted Application CI
 
-Successful run:
-- https://github.com/mrfahimhawladar/OS/actions/runs/43215425700
+Latest successful run:
+- https://github.com/mrfahimhawladar/OS/actions/runs/43216049336
 
 Results:
 - OP-TEE OS developer kit exported from pinned OP-TEE OS commit bffdda07ee61910cc63f45c45838fb2b59288c71.
 - Fahim credential TA cross-compiled successfully.
 - ELF inspection: ELF64, AArch64.
 - Signed .ta package generated and uploaded as artifact `fahim-os-credential-ta-dev-signed`.
-- Artifact ID: 13943227381.
-- Artifact SHA-256: 149c6bc231d93e218710fb883288fa57a6a9abe8b4f833001ce1bfcb18ffd6e3.
+- Artifact ID: 13943577477.
+- Artifact SHA-256: ba12c7a0544e3923121df0d98341ce3bd3b2b38816d613f147a614766b1c0c87.
 - Artifact expires 2026-12-12.
+- Native credential service now owns the OP-TEE transport, backend, verifier and LockScreenCore in the correct lifetime order; the no-TEE test proves its core remains Locked and returns BackendUnavailable.
 
 **Signing warning:** CI uses OP-TEE's bundled default development TA signing key. The artifact proves compile/link/signing format only. It is NOT a production-trusted package. The device owner must re-sign it with the platform's protected TA signing key and configure the matching trust anchor before installation.
 
