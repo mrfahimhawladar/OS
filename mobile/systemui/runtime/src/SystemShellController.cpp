@@ -54,28 +54,12 @@ void SystemShellController::refresh_authenticator() noexcept {
     const std::size_t count = vault_->account_count() < state_.codes.size()
         ? vault_->account_count() : state_.codes.size();
     for (std::size_t i = 0; i < count; ++i) {
-        fahim::security::AuthenticatorAccount account{};
-        if (!vault_->read_account(i, account)) continue;
-        auto& code = state_.codes[state_.code_count];
-        std::size_t j = 0u;
-        while (j + 1u < sizeof(code.issuer) && account.issuer[j] != '\0') {
-            code.issuer[j] = account.issuer[j]; ++j;
+        fahim::security::OneTimeCode code{};
+        if (vault_->generate_code(i, state_.status.unix_time_seconds, code)) {
+            state_.codes[state_.code_count++] = code;
         }
-        code.issuer[j] = '\0'; j = 0u;
-        while (j + 1u < sizeof(code.label) && account.label[j] != '\0') {
-            code.label[j] = account.label[j]; ++j;
-        }
-        code.label[j] = '\0';
-        code.digits = account.digits;
-        code.seconds_remaining = account.period_seconds == 0u ? 0u :
-            account.period_seconds -
-            static_cast<std::uint32_t>(state_.status.unix_time_seconds % account.period_seconds);
-        if (fahim::security::compute_totp(
-                account.secret, account.secret_length, state_.status.unix_time_seconds,
-                account.period_seconds, account.digits, code.code, sizeof(code.code))) {
-            ++state_.code_count;
-        }
-        fahim::security::secure_clear(&account, sizeof(account));
+        // The secure vault returns metadata and a short-lived code only;
+        // no shared secret is ever copied into this Normal World process.
     }
 }
 
