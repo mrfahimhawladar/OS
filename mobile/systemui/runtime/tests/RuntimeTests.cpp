@@ -259,7 +259,8 @@ static void test_kernel_session_bridge() {
 static void test_native_lock_screen_renderer_and_controller() {
     constexpr std::uint32_t width = 240u;
     constexpr std::uint32_t height = 480u;
-    std::vector<std::uint32_t> pixels(static_cast<std::size_t>(width) * height, 0u);
+    const std::size_t count = static_cast<std::size_t>(width) * height;
+    std::vector<std::uint32_t> pixels(count, 0u);
     fahim::systemui::LockScreenRenderer renderer(
         pixels.data(), width, height, pixels.size());
     assert(renderer.valid());
@@ -281,12 +282,48 @@ static void test_native_lock_screen_renderer_and_controller() {
     fahim::systemui::LockScreenController controller(core, control, renderer);
     assert(mock_kernel_session_locked);
 
-    // Swipe up to reveal the PIN bouncer.
-    assert(controller.handle_event(PointerEvent{PointerPhase::Down, 120, 400, 10}));
-    assert(controller.handle_event(PointerEvent{PointerPhase::Up, 120, 190, 40}));
+    // Register the actual native ARGB lock-screen bitmap with the software compositor.
+    std::vector<std::uint8_t> framebuffer(count * sizeof(std::uint32_t), 0u);
+    FramebufferDisplay display(
+        FramebufferConfig{framebuffer.data(), framebuffer.size(), width, height,
+                          width * 4u, PixelFormat::XRGB8888});
+    std::vector<std::uint32_t> scratch(count, 0u);
+    fahim::ui::LockScreenSessionGate gate(core);
+    Compositor compositor(display, gate, scratch.data(), scratch.size());
+    assert(controller.render_to_compositor(frame, compositor, 77u, 10));
+    assert(compositor.surface_count() == 1u);
+    assert(compositor.compose());
+    const auto* framebuffer_pixels =
+        reinterpret_cast<const std::uint32_t*>(framebuffer.data());
+    assert(framebuffer_pixels[0] != 0u);
+
+    // Raw touch samples are calibrated, queued and delivered to the controller.
+    class QueueTouchDevice final : public fahim::input::RawTouchDevice {
+    public:
+        fahim::input::RawTouchSample samples[2]{
+            {PointerPhase::Down, 2048, 4095, 10},
+            {PointerPhase::Up, 2048, 1600, 40}
+        };
+        std::size_t index{0};
+        bool read_sample(fahim::input::RawTouchSample& sample) noexcept override {
+            if (index >= 2u) return false;
+            sample = samples[index++];
+            return true;
+        }
+    } touch_device;
+
+    fahim::input::TouchscreenCalibrator calibration(
+        fahim::input::TouchCalibration{0, 4095, 0, 4095, width, height,
+                                       fahim::input::Rotation::Deg0});
+    fahim::input::TouchInputPipeline input(touch_device, calibration);
+    assert(input.pump_one());
+    assert(input.pump_one());
+    assert(controller.pump_input(input));
+    assert(input.queued_events() == 0u);
     assert(controller.bouncer_open());
-    controller.render(frame);
-    assert(pixels[0] != 0u);
+
+    assert(controller.render_to_compositor(frame, compositor, 77u, 10));
+    assert(compositor.compose());
 
     // Enter the test-only credential 2468 using on-screen key hit targets.
     const auto tap = [&controller](std::int32_t x, std::int32_t y,
@@ -304,11 +341,15 @@ static void test_native_lock_screen_renderer_and_controller() {
     assert(core.state() == LockState::Unlocked);
     assert(!controller.bouncer_open());
     assert(!mock_kernel_session_locked);
-    assert(!controller.handle_event(PointerEvent{PointerPhase::Move, 120, 120, 100}));
+    assert(compositor.surface_count() == 1u);
+    assert(!controller.render_to_compositor(frame, compositor, 77u, 10));
+    assert(compositor.surface_count() == 0u);
 
     controller.lock();
     assert(core.state() == LockState::Locked);
     assert(mock_kernel_session_locked);
+    assert(controller.render_to_compositor(frame, compositor, 77u, 10));
+    assert(compositor.surface_count() == 1u);
 }
 
 static void test_missing_credential_backend_fails_closed() {
