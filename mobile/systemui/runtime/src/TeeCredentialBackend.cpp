@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <limits>
+#include <new>
 
 #if defined(FAHIM_ENABLE_OPTEE_CLIENT)
 #include <cstring>
