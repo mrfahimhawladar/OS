@@ -243,14 +243,6 @@ void SystemShellRenderer::render_home(const SystemShellState& state) noexcept {
     text(scale_pos(24, s), scale_pos(765, s), "SWIPE DOWN FOR CONTROL CENTER", 1, muted_color_);
     round_rect({scale_pos(144, s), scale_pos(858, s),
                 scale_dim(152, s), scale_dim(6, s)}, scale_pos(3, s), text_color_);
-    round_rect({scale_pos(18, s), scale_pos(625, s),
-                scale_dim(404, s), scale_dim(100, s)},
-               scale_pos(30, s), 0x99566b82u);
-    text(scale_pos(38, s), scale_pos(655, s), "QUICK ACCESS", 1, muted_color_);
-    text(scale_pos(38, s), scale_pos(685, s), "SETTINGS   AUTHENTICATOR", 1, text_color_);
-    text(scale_pos(24, s), scale_pos(765, s), "SWIPE DOWN FOR CONTROL CENTER", 1, muted_color_);
-    round_rect({scale_pos(144, s), scale_pos(858, s),
-                scale_dim(152, s), scale_dim(6, s)}, scale_pos(3, s), text_color_);
 }
 
 void SystemShellRenderer::render_control_center(const SystemShellState& state) noexcept {
