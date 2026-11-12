@@ -86,3 +86,11 @@ Still required for a real visible, usable phone Lock Screen:
 - Complete board port, ROM/image integration and recovery plan.
 
 Therefore: the Provisioner TA and Trusted UI PTA now exist and compile into their respective ARM64 outputs, and the native client/tests pass. However real secure PIN enrollment/authentication and a boot-active Lock Screen have NOT been verified on QEMU hardware or a physical phone. No Android image, ROM, APK or flashable phone image is produced by these runs.
+
+## Native C++ renderer screenshot verification
+
+- Workflow: https://github.com/mrfahimhawladar/OS/actions/runs/43220788910
+- Result: build, 2/2 tests, screenshot rendering and PNG upload all PASS.
+- Artifact: fahim-os-native-lockscreen-render (ID 13945437868).
+- Frames: native-lockscreen.png and native-pin-bouncer.png, each 440x900.
+- These are host-rendered outputs from the actual LockScreenRenderer.cpp code. They are not captured from a booted device or QEMU display and do not represent a running OS.
