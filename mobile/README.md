@@ -118,3 +118,5 @@ Build and run the SystemUI tests:
 **Still not connected:** QEMU virtio-gpu/simple-framebuffer mapping, physical-phone display controller, touchscreen/virtio-input driver, an OS window/session manager, kernel-enforced process/session lock gate, TEE/secure credential storage and persistent anti-brute-force state. The framebuffer adapter expects a real platform driver to supply a validated mapped framebuffer; the credential adapter expects a trusted service to implement atomic verification and persistent policy. Both are integration contracts, not fake hardware.
 
 The Lock Screen is **not boot-active** and the repository does not yet contain a flashable smartphone image or ROM.
+
+The ARM64 scheduler now has a fail-closed session gate: locked at boot, application-role tasks are not scheduled while locked, and only kernel-assigned Lock Screen/Emergency roles may run. The native runtime includes a bridge to the kernel SVC lock-state interface. A trusted process loader must still create the Lock Screen task with the LOCKSCREEN role before normal application processes are enabled.
