@@ -92,11 +92,13 @@ public:
     bool available() const noexcept { return backend_.available(); }
     ProtectedCredentialVerifier& verifier() noexcept { return verifier_; }
     TeeProtectedCredentialBackend& backend() noexcept { return backend_; }
+    fahim::systemui::LockScreenCore& lock_screen_core() noexcept { return core_; }
 
 private:
     OpteeCredentialTransport transport_{};
     TeeProtectedCredentialBackend backend_;
     ProtectedCredentialVerifier verifier_;
+    fahim::systemui::LockScreenCore core_;
 };
 
 }  // namespace fahim::security
